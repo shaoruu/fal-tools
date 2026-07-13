@@ -416,6 +416,18 @@ describe("budgeted execution and recovery", () => {
       }),
     ).rejects.toThrow("failed candidates");
     expect(budgetedProvider.calls).toBe(2);
+    await expect(
+      createPipeline({
+        clock: immediateClock,
+        providers: { fal: budgetedProvider },
+      }).run({
+        isResume: true,
+        manifestPath,
+        maxCalls: 2,
+        outDir: path.join(directory, "budgeted-retries"),
+      }),
+    ).rejects.toThrow("failed candidates");
+    expect(budgetedProvider.calls).toBe(2);
 
     const permanentProvider = new FakeProvider({ isPermanentFailure: true });
     await expect(

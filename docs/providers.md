@@ -7,7 +7,8 @@
 2. wait for queue completion without requesting provider logs;
 3. retrieve the result;
 4. locate the first HTTPS media URL in the returned data;
-5. download at most 512 MiB and discard the URL and response structure.
+5. require every download and redirect host to remain under `fal.media`;
+6. stream at most 512 MiB and discard the URL and response structure.
 
 Only bytes, media type, and request ID cross the provider boundary. Signed URLs,
 response bodies, and headers never enter the logger or run ledger.
@@ -30,12 +31,15 @@ provider-specific units without changing manifest job semantics.
 
 ## Errors and retries
 
-The adapter classifies network failures and HTTP 408, 429, 500, 502, 503, and
-504 responses as transient, except caller-requested timeouts. Core retries only
-those failures, for at most three attempts with bounded exponential delay. Every
-attempt consumes the hard call ceiling and its known price consumes the hard
-cost ceiling before submission. Validation, authentication, unsupported model,
-malformed output, unsafe download destination, download-size, and other
-permanent failures are not retried.
+Ambiguous queue submission failures are converted to a permanent safe failure
+before the SDK can retry them, preventing one reserved attempt from creating
+multiple jobs. Other adapter failures are classified as transient only for HTTP
+408, 429, 500, 502, 503, and 504 responses and network failures, except
+caller-requested timeouts. Core retries only those failures, for at most three
+attempts with bounded exponential delay. Every attempt is durably reserved in
+the run ledger before submission; it consumes the lifetime hard call ceiling,
+and its known price consumes the lifetime hard cost ceiling. Validation,
+authentication, unsupported model, malformed output, unsafe download
+destination, download-size, and other permanent failures are not retried.
 
 Tests use a fake provider and never contact fal.ai.

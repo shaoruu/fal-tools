@@ -1,6 +1,3 @@
-import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
-
 import {
   ApiError,
   createFalClient,
@@ -21,6 +18,45 @@ export type FalProviderOptions = {
   credentials?: string | (() => string | undefined);
   fetcher?: typeof fetch;
 };
+
+function createSubmitSafeFetcher(fetcher: typeof fetch): typeof fetch {
+  return async (input, init) => {
+    const requestUrl =
+      typeof input === "string" || input instanceof URL ? input : input.url;
+    const method = (
+      init?.method ?? (input instanceof Request ? input.method : "GET")
+    ).toLocaleUpperCase();
+    const hostname = new URL(requestUrl).hostname.toLocaleLowerCase();
+    const isQueueSubmission =
+      method === "POST" &&
+      (hostname === "queue.fal.run" || hostname.endsWith(".queue.fal.run"));
+    if (!isQueueSubmission) {
+      return fetcher(input, init);
+    }
+    try {
+      const response = await fetcher(input, init);
+      if (![408, 429, 500, 502, 503, 504].includes(response.status)) {
+        return response;
+      }
+      await response.body?.cancel();
+    } catch {
+      return new Response(
+        JSON.stringify({ detail: "queue submission failed without retry" }),
+        {
+          headers: { "content-type": "application/json" },
+          status: 409,
+        },
+      );
+    }
+    return new Response(
+      JSON.stringify({ detail: "queue submission failed without retry" }),
+      {
+        headers: { "content-type": "application/json" },
+        status: 409,
+      },
+    );
+  };
+}
 
 function findAssetUrl(
   value: JsonValue,
@@ -57,51 +93,13 @@ function findAssetUrl(
   return undefined;
 }
 
-function isPrivateAddress(address: string): boolean {
-  if (isIP(address) === 4) {
-    const octets = address.split(".").map(Number);
-    const first = octets[0] ?? 0;
-    const second = octets[1] ?? 0;
-    return (
-      first === 0 ||
-      first === 10 ||
-      first === 127 ||
-      (first === 169 && second === 254) ||
-      (first === 172 && second >= 16 && second <= 31) ||
-      (first === 192 && second === 168) ||
-      first >= 224
-    );
-  }
-  const normalized = address.toLocaleLowerCase();
-  return (
-    normalized === "::" ||
-    normalized === "::1" ||
-    normalized.startsWith("fc") ||
-    normalized.startsWith("fd") ||
-    normalized.startsWith("fe8") ||
-    normalized.startsWith("fe9") ||
-    normalized.startsWith("fea") ||
-    normalized.startsWith("feb")
-  );
-}
-
-async function assertSafeDownloadUrl(url: URL): Promise<void> {
+function assertSafeDownloadUrl(url: URL): void {
   if (url.protocol !== "https:") {
     throw new Error("fal asset URL must use HTTPS");
   }
   const hostname = url.hostname.toLocaleLowerCase();
-  if (hostname === "localhost" || hostname.endsWith(".localhost")) {
-    throw new Error("fal asset URL cannot target a local host");
-  }
-  const addresses =
-    isIP(hostname) === 0
-      ? await lookup(hostname, { all: true, verbatim: true })
-      : [{ address: hostname }];
-  if (
-    addresses.length === 0 ||
-    addresses.some((entry) => isPrivateAddress(entry.address))
-  ) {
-    throw new Error("fal asset URL resolved to a private network");
+  if (hostname !== "fal.media" && !hostname.endsWith(".fal.media")) {
+    throw new Error("fal asset URL is outside the fal.media trust boundary");
   }
 }
 
@@ -150,7 +148,7 @@ async function downloadAsset(
   let currentUrl = new URL(url);
   let response: Response | undefined;
   for (let redirect = 0; redirect <= 5; redirect += 1) {
-    await assertSafeDownloadUrl(currentUrl);
+    assertSafeDownloadUrl(currentUrl);
     response = await fetcher(currentUrl, {
       headers: { accept: "audio/*, image/*, application/octet-stream" },
       redirect: "manual",
@@ -212,13 +210,14 @@ class FalGenerationProvider implements GenerationProvider {
 
   constructor(options: FalProviderOptions) {
     this.#capabilities = structuredClone(options.capabilities);
+    this.#fetcher = options.fetcher ?? fetch;
     this.#client = createFalClient({
       ...(options.credentials === undefined
         ? {}
         : { credentials: options.credentials }),
       retry: { maxRetries: 0 },
+      fetch: createSubmitSafeFetcher(this.#fetcher),
     });
-    this.#fetcher = options.fetcher ?? fetch;
   }
 
   getCapability(model: string): ModelCapability | undefined {

@@ -72,7 +72,8 @@ Callers can supply the image/audio processors and auditors from
 - Provider responses, headers, signed URLs, and prompt text are excluded from
   logs and provenance.
 - Only transient provider failures are retried, at most three attempts. Every
-  attempt consumes the hard call and known-cost ceilings before submission.
+  attempt is recorded before submission and consumes the run's lifetime hard
+  call and known-cost ceilings, including across resume.
 - No generated binary belongs in the repository or npm package.
 
 See [architecture](docs/architecture.md), [manifest format](docs/manifests.md),

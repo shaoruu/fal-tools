@@ -1,11 +1,13 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { constants as fsConstants } from "node:fs";
 import {
   lstat,
   mkdir,
+  open,
   readFile,
   realpath,
   rename,
-  writeFile,
+  rm,
 } from "node:fs/promises";
 import path from "node:path";
 
@@ -155,9 +157,24 @@ export async function writeJsonAtomic(
   value: object,
 ): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
-  const temporaryPath = `${filePath}.tmp`;
-  await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {
-    mode: 0o600,
-  });
-  await rename(temporaryPath, filePath);
+  const temporaryPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${randomUUID()}.tmp`,
+  );
+  const flags =
+    fsConstants.O_CREAT |
+    fsConstants.O_EXCL |
+    fsConstants.O_WRONLY |
+    fsConstants.O_NOFOLLOW;
+  const handle = await open(temporaryPath, flags, 0o600);
+  try {
+    await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`, "utf8");
+    await handle.sync();
+    await handle.close();
+    await rename(temporaryPath, filePath);
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    await rm(temporaryPath, { force: true });
+    throw error;
+  }
 }

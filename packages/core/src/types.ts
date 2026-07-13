@@ -191,6 +191,10 @@ export type RunLedger = {
   manifestHash: string;
   planHash: string;
   status: "completed" | "failed" | "running";
+  usage: {
+    calls: number;
+    costUsd: number;
+  };
   version: 1;
 };
 

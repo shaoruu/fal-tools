@@ -194,6 +194,12 @@ export const runLedgerSchema = z
     manifestHash: z.string(),
     planHash: z.string(),
     status: z.enum(["completed", "failed", "running"]),
+    usage: z
+      .object({
+        calls: z.number().int().nonnegative(),
+        costUsd: z.number().nonnegative(),
+      })
+      .strict(),
     version: z.literal(1),
   })
   .strict();

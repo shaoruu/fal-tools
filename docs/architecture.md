@@ -26,6 +26,7 @@ native media dependencies into consumers that do not need them.
 2. `run` repeats planning, checks hard call/cost ceilings before work, and
    executes the immutable calls under bounded concurrency. Provider output is
    processed into a local cache and materialized in the candidate directory.
+   Attempt/cost reservations are persisted before submission and survive resume.
 3. `audit` verifies candidate hashes before invoking an objective kind-specific
    auditor. Results are added to `run.json`.
 4. `export` verifies the ledger, required QA pass, source hash, explicit

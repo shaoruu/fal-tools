@@ -50,6 +50,8 @@ type CacheIndex = {
   version: 1;
 };
 
+type ReserveAttempt = (call: PlannedCall) => Promise<void>;
+
 async function isFilePresent(filePath: string): Promise<boolean> {
   try {
     await access(filePath);
@@ -150,25 +152,14 @@ async function generateWithRetry(
   providers: Providers,
   clock: Clock,
   logger: Logger,
-  budget: ExecutionBudget,
+  reserveAttempt: ReserveAttempt,
 ): Promise<{ bytes: Uint8Array; requestId?: string }> {
   const provider = providers[call.provider];
   if (provider === undefined) {
     throw new Error(`provider unavailable for ${call.candidateId}`);
   }
   for (let attempt = 1; attempt <= call.maxAttempts; attempt += 1) {
-    const attemptCostUsd = call.price?.amountUsd ?? 0;
-    if (budget.usedCalls >= budget.maxCalls) {
-      throw new Error("hard max-calls budget exhausted before retry");
-    }
-    if (
-      budget.maxCostUsd !== undefined &&
-      budget.usedCostUsd + attemptCostUsd > budget.maxCostUsd
-    ) {
-      throw new Error("hard max-cost budget exhausted before retry");
-    }
-    budget.usedCalls += 1;
-    budget.usedCostUsd += attemptCostUsd;
+    await reserveAttempt(call);
     try {
       const result = await provider.generate({
         input: call.input,
@@ -307,7 +298,7 @@ async function executeCall(
   processors: AssetProcessors,
   clock: Clock,
   logger: Logger,
-  budget: ExecutionBudget,
+  reserveAttempt: ReserveAttempt,
 ): Promise<CandidateRecord> {
   const cacheRoot = path.join(outDir, ".fal-tools", "cache");
   await mkdir(cacheRoot, { recursive: true });
@@ -339,7 +330,7 @@ async function executeCall(
     providers,
     clock,
     logger,
-    budget,
+    reserveAttempt,
   );
   const processor = processors[call.kind];
   const bytes =
@@ -451,10 +442,22 @@ export async function runPlan(
       manifestHash: plan.manifestHash,
       planHash: plan.planHash,
       status: "running",
+      usage: {
+        calls: 0,
+        costUsd: 0,
+      },
       version: 1,
     };
   }
   await writeJsonAtomic(ledgerPath, ledger);
+  budget.usedCalls = ledger.usage.calls;
+  budget.usedCostUsd = ledger.usage.costUsd;
+  if (
+    budget.usedCalls > budget.maxCalls ||
+    (budget.maxCostUsd !== undefined && budget.usedCostUsd > budget.maxCostUsd)
+  ) {
+    throw new Error("resume ledger has already exhausted the hard budget");
+  }
 
   const completedIds = new Set(
     ledger.candidates.map((candidate) => candidate.candidateId),
@@ -464,10 +467,32 @@ export async function runPlan(
   );
   const limit = pLimit(manifest.concurrency ?? 1);
   let writeQueue = Promise.resolve();
-  const persist = (): Promise<void> => {
-    writeQueue = writeQueue.then(() => writeJsonAtomic(ledgerPath, ledger));
-    return writeQueue;
+  const enqueueWrite = (operation: () => Promise<void>): Promise<void> => {
+    const pending = writeQueue.then(operation, operation);
+    writeQueue = pending.catch(() => undefined);
+    return pending;
   };
+  const persist = (): Promise<void> => {
+    return enqueueWrite(() => writeJsonAtomic(ledgerPath, ledger));
+  };
+  const reserveAttempt: ReserveAttempt = (call) =>
+    enqueueWrite(async () => {
+      const attemptCostUsd = call.price?.amountUsd ?? 0;
+      if (budget.usedCalls >= budget.maxCalls) {
+        throw new Error("hard max-calls budget exhausted before retry");
+      }
+      if (
+        budget.maxCostUsd !== undefined &&
+        budget.usedCostUsd + attemptCostUsd > budget.maxCostUsd
+      ) {
+        throw new Error("hard max-cost budget exhausted before retry");
+      }
+      budget.usedCalls += 1;
+      budget.usedCostUsd += attemptCostUsd;
+      ledger.usage.calls = budget.usedCalls;
+      ledger.usage.costUsd = budget.usedCostUsd;
+      await writeJsonAtomic(ledgerPath, ledger);
+    });
 
   await Promise.all(
     calls.map((call) =>
@@ -482,7 +507,7 @@ export async function runPlan(
             processors,
             clock,
             logger,
-            budget,
+            reserveAttempt,
           );
           ledger.candidates.push(candidate);
           await persist();
