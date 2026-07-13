@@ -28,3 +28,7 @@ package README.
 The release workflow builds archives and an SBOM as reviewable artifacts. It
 does not publish automatically; a maintainer must add a protected npm publish
 job after completing the release review.
+
+Package inspection requires built JavaScript, declarations, and the CLI entry
+point, then installs all archives into a clean strict-ESM consumer, imports each
+public package, and executes the packed CLI help command.

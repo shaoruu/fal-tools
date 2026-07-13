@@ -5,17 +5,22 @@ import type { JsonObject, JsonValue, Logger } from "./types.js";
 const sensitiveKeyPattern =
   /(?:authorization|cookie|credential|env|header|key|password|prompt|response|secret|token)/i;
 const secretValuePatterns = [
-  /-----BEGIN [A-Z ]+PRIVATE KEY-----/,
-  /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/i,
-  /\b(?:fal[_-]?key|api[_-]?key|secret|token)\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]{8,}/i,
-  /\b(?:sk|pk)_[A-Za-z0-9_-]{16,}\b/,
-  /https?:\/\/\S+[?&](?:signature|token|x-amz-credential|x-amz-signature)=/i,
+  /-----BEGIN ([A-Z ]+PRIVATE KEY)-----[\s\S]*?-----END \1-----/g,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/gi,
+  /\b(?:fal[_-]?key|api[_-]?key|secret|token)\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]{8,}/gi,
+  /\b(?:sk|pk)_[A-Za-z0-9_-]{16,}\b/g,
+  /https?:\/\/\S+[?&](?:signature|token|x-amz-credential|x-amz-signature)=\S*/gi,
 ];
 const absolutePathPatterns = [
-  /^\/(?:Users|home|private|tmp|var)\//,
+  /(?:^|\s)\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+/,
   /^[A-Za-z]:[\\/]/,
   /^file:\/\//i,
 ];
+
+function matches(pattern: RegExp, value: string): boolean {
+  pattern.lastIndex = 0;
+  return pattern.test(value);
+}
 
 export function assertSafeRelativePath(value: string, label: string): void {
   if (
@@ -29,7 +34,7 @@ export function assertSafeRelativePath(value: string, label: string): void {
 
 export function assertPublicSafe(value: JsonValue, label = "value"): void {
   if (typeof value === "string") {
-    if (secretValuePatterns.some((pattern) => pattern.test(value))) {
+    if (secretValuePatterns.some((pattern) => matches(pattern, value))) {
       throw new Error(`${label} contains secret-like content`);
     }
     if (absolutePathPatterns.some((pattern) => pattern.test(value))) {
@@ -81,6 +86,7 @@ export function redactJson(value: JsonValue, key = ""): JsonValue {
 export function redactText(value: string): string {
   let redacted = value;
   for (const pattern of secretValuePatterns) {
+    pattern.lastIndex = 0;
     redacted = redacted.replace(pattern, "[REDACTED]");
   }
   redacted = redacted.replace(/https?:\/\/\S+\?\S+/gi, "[REDACTED_URL]");

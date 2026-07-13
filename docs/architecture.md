@@ -47,10 +47,11 @@ run-directory/
 ```
 
 Candidates are reviewable local artifacts, not package or repository content.
-The cache key covers provider/model, kind, validated input, prompt digest,
-variant, output format, and ordered post steps. Resume requires the same plan
-and verifies completed candidate hashes. A separate selection document is
-required to export.
+The request index key covers provider/model, kind, validated input, prompt
+digest, variant, pricing snapshot, provider/output formats, and ordered post
+steps. Media blobs are stored by their content hash, and cache indexes are
+verified before reuse. Resume requires the same stored plan and verifies
+completed candidate hashes. A separate selection document is required to export.
 
 ## Non-goals
 

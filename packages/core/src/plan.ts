@@ -1,14 +1,22 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
-import { canonicalJson, loadManifest, resolveContained, sha256 } from "./io.js";
+import {
+  canonicalJson,
+  loadManifest,
+  resolveContainedExisting,
+  sha256,
+} from "./io.js";
+import { assertPublicSafe } from "./security.js";
 import type {
   Clock,
   JsonObject,
+  JsonValue,
   Manifest,
   ManifestJob,
   PipelinePlan,
   PlannedCall,
+  Price,
   Providers,
   Variant,
 } from "./types.js";
@@ -63,15 +71,23 @@ async function promptDigest(
   if (job.prompt !== undefined) {
     return sha256(job.prompt);
   }
-  const promptPath = resolveContained(manifestDirectory, job.promptFile ?? "");
-  return sha256(await readFile(promptPath, "utf8"));
+  const promptPath = await resolveContainedExisting(
+    manifestDirectory,
+    job.promptFile ?? "",
+  );
+  if ((await stat(promptPath)).size > 1024 * 1024) {
+    throw new Error(`prompt file exceeds the 1 MiB limit for job ${job.id}`);
+  }
+  const prompt = await readFile(promptPath, "utf8");
+  assertPublicSafe(prompt, `jobs.${job.id}.promptFile`);
+  return sha256(prompt);
 }
 
 function validateCapability(
   job: ManifestJob,
   providers: Providers,
   format: string,
-): number | null {
+): Price | null {
   const provider = providers[job.provider];
   if (provider === undefined) {
     throw new Error(`provider ${job.provider} is not configured`);
@@ -91,13 +107,31 @@ function validateCapability(
   if (capability.price === undefined) {
     return null;
   }
+  const runtimePrice = JSON.parse(JSON.stringify(capability.price)) as {
+    amountUsd?: JsonValue;
+    retrievedAt?: JsonValue;
+    source?: JsonValue;
+    unit?: JsonValue;
+  };
   if (
-    capability.price.source.trim() === "" ||
-    !Number.isFinite(Date.parse(capability.price.retrievedAt))
+    runtimePrice.unit !== "call" ||
+    typeof runtimePrice.amountUsd !== "number" ||
+    !Number.isFinite(runtimePrice.amountUsd) ||
+    runtimePrice.amountUsd < 0 ||
+    typeof runtimePrice.source !== "string" ||
+    runtimePrice.source.trim() === "" ||
+    typeof runtimePrice.retrievedAt !== "string" ||
+    !Number.isFinite(Date.parse(runtimePrice.retrievedAt))
   ) {
     throw new Error(`model ${job.model} has invalid pricing provenance`);
   }
-  return capability.price.amountUsd;
+  assertPublicSafe(runtimePrice.source, `pricing.${job.model}.source`);
+  return {
+    amountUsd: runtimePrice.amountUsd,
+    retrievedAt: runtimePrice.retrievedAt,
+    source: runtimePrice.source,
+    unit: "call",
+  };
 }
 
 export async function createPlan(
@@ -115,7 +149,8 @@ export async function createPlan(
     validatePostSteps(job);
     const promptHash = await promptDigest(job, manifestDirectory);
     const format = finalFormat(job);
-    const costUsd = validateCapability(job, providers, format);
+    const price = validateCapability(job, providers, job.output.format);
+    const costUsd = price?.amountUsd ?? null;
     for (const variant of expandVariants(job)) {
       const candidateId = `${job.id}.${variant.id}`;
       if (candidateIds.has(candidateId)) {
@@ -123,10 +158,11 @@ export async function createPlan(
       }
       candidateIds.add(candidateId);
       const outputName = `${job.output.stem}.${variant.id}.${format}`;
-      if (outputs.has(outputName)) {
+      const normalizedOutputName = outputName.toLocaleLowerCase("en-US");
+      if (outputs.has(normalizedOutputName)) {
         throw new Error(`output collision: ${outputName}`);
       }
-      outputs.add(outputName);
+      outputs.add(normalizedOutputName);
       const input = mergeInput(job.input, variant.input);
       const callSeed = {
         candidateId,
@@ -136,7 +172,9 @@ export async function createPlan(
         kind: job.kind,
         model: job.model,
         post: job.post ?? [],
+        price,
         promptHash,
+        providerFormat: job.output.format,
         provider: job.provider,
         variantId: variant.id,
       };
@@ -150,6 +188,8 @@ export async function createPlan(
         model: job.model,
         output: { format, stem: job.output.stem },
         post: job.post ?? [],
+        price,
+        providerFormat: job.output.format,
         ...(job.promptFile === undefined ? {} : { promptFile: job.promptFile }),
         promptHash,
         provider: job.provider,

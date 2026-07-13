@@ -1,6 +1,7 @@
 import {
   access,
   copyFile,
+  lstat,
   mkdir,
   readFile,
   stat,
@@ -11,16 +12,20 @@ import path from "node:path";
 import pLimit from "p-limit";
 
 import {
+  assertNoSymlinkComponents,
   loadRunLedger,
   resolveContained,
+  resolveContainedExisting,
   sha256,
   writeJsonAtomic,
 } from "./io.js";
 import { createPlan } from "./plan.js";
+import { assertPublicSafe } from "./security.js";
 import type {
   AssetProcessors,
   CandidateRecord,
   Clock,
+  JsonObject,
   Logger,
   Manifest,
   PipelinePlan,
@@ -29,6 +34,21 @@ import type {
   RunLedger,
   RunOptions,
 } from "./types.js";
+
+type ExecutionBudget = {
+  maxCalls: number;
+  maxCostUsd?: number;
+  usedCalls: number;
+  usedCostUsd: number;
+};
+
+type CacheIndex = {
+  blob: string;
+  cacheKey: string;
+  contentHash: string;
+  requestId?: string;
+  version: 1;
+};
 
 async function isFilePresent(filePath: string): Promise<boolean> {
   try {
@@ -56,9 +76,14 @@ function assertBudgets(
   manifest: Manifest,
   plan: PipelinePlan,
   options: RunOptions,
-): void {
+): ExecutionBudget {
   const maxCalls = effectiveLimit(options.maxCalls, manifest.budget?.maxCalls);
-  if (maxCalls === undefined || plan.callCount > maxCalls) {
+  if (
+    maxCalls === undefined ||
+    !Number.isSafeInteger(maxCalls) ||
+    maxCalls <= 0 ||
+    plan.callCount > maxCalls
+  ) {
     throw new Error("planned calls exceed the hard max-calls budget");
   }
   const isUnpricedCallsAllowed =
@@ -73,9 +98,20 @@ function assertBudgets(
     options.maxCostUsd,
     manifest.budget?.maxCostUsd,
   );
-  if (maxCostUsd !== undefined && plan.estimatedCostUsd > maxCostUsd) {
+  if (
+    maxCostUsd !== undefined &&
+    (!Number.isFinite(maxCostUsd) ||
+      maxCostUsd < 0 ||
+      plan.estimatedCostUsd > maxCostUsd)
+  ) {
     throw new Error("known planned cost exceeds the hard max-cost budget");
   }
+  return {
+    maxCalls,
+    ...(maxCostUsd === undefined ? {} : { maxCostUsd }),
+    usedCalls: 0,
+    usedCostUsd: 0,
+  };
 }
 
 function findPrompt(manifest: Manifest, call: PlannedCall): string {
@@ -95,12 +131,13 @@ async function loadPrompt(
     call.promptFile === undefined
       ? findPrompt(manifest, call)
       : await readFile(
-          resolveContained(
+          await resolveContainedExisting(
             path.dirname(path.resolve(manifestPath)),
             call.promptFile,
           ),
           "utf8",
         );
+  assertPublicSafe(prompt, `jobs.${call.jobId}.prompt`);
   if (sha256(prompt) !== call.promptHash) {
     throw new Error(`prompt changed after planning for ${call.candidateId}`);
   }
@@ -113,6 +150,7 @@ async function generateWithRetry(
   providers: Providers,
   clock: Clock,
   logger: Logger,
+  budget: ExecutionBudget,
 ): Promise<{ bytes: Uint8Array; requestId?: string }> {
   const provider = providers[call.provider];
   if (provider === undefined) {
@@ -120,12 +158,24 @@ async function generateWithRetry(
   }
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const attemptCostUsd = call.price?.amountUsd ?? 0;
+    if (budget.usedCalls >= budget.maxCalls) {
+      throw new Error("hard max-calls budget exhausted before retry");
+    }
+    if (
+      budget.maxCostUsd !== undefined &&
+      budget.usedCostUsd + attemptCostUsd > budget.maxCostUsd
+    ) {
+      throw new Error("hard max-cost budget exhausted before retry");
+    }
+    budget.usedCalls += 1;
+    budget.usedCostUsd += attemptCostUsd;
     try {
       const result = await provider.generate({
         input: call.input,
         kind: call.kind,
         model: call.model,
-        outputFormat: call.output.format,
+        outputFormat: call.providerFormat,
         prompt,
       });
       return {
@@ -155,9 +205,11 @@ async function materializeCandidate(
   call: PlannedCall,
   sourcePath: string,
   candidatePath: string,
+  outDir: string,
   requestId?: string,
 ): Promise<CandidateRecord> {
   await mkdir(path.dirname(candidatePath), { recursive: true });
+  await assertNoSymlinkComponents(outDir, candidatePath);
   await copyFile(sourcePath, candidatePath);
   const bytes = await readFile(candidatePath);
   const fileStats = await stat(candidatePath);
@@ -179,6 +231,74 @@ async function materializeCandidate(
   };
 }
 
+async function readCache(
+  cacheRoot: string,
+  indexPath: string,
+  call: PlannedCall,
+): Promise<{ blobPath: string; requestId?: string } | undefined> {
+  if (!(await isFilePresent(indexPath))) {
+    return undefined;
+  }
+  const parsed = JSON.parse(await readFile(indexPath, "utf8")) as JsonObject;
+  if (
+    parsed.version !== 1 ||
+    parsed.cacheKey !== call.cacheKey ||
+    typeof parsed.contentHash !== "string" ||
+    !/^[a-f0-9]{64}$/.test(parsed.contentHash) ||
+    typeof parsed.blob !== "string" ||
+    (parsed.requestId !== undefined && typeof parsed.requestId !== "string")
+  ) {
+    throw new Error(`cache metadata is invalid for ${call.candidateId}`);
+  }
+  const blobPath = await resolveContainedExisting(cacheRoot, parsed.blob);
+  if (sha256(await readFile(blobPath)) !== parsed.contentHash) {
+    throw new Error(`cache integrity check failed for ${call.candidateId}`);
+  }
+  return {
+    blobPath,
+    ...(typeof parsed.requestId === "string"
+      ? { requestId: parsed.requestId }
+      : {}),
+  };
+}
+
+async function writeCache(
+  cacheRoot: string,
+  indexPath: string,
+  call: PlannedCall,
+  bytes: Uint8Array,
+  requestId?: string,
+): Promise<string> {
+  const contentHash = sha256(bytes);
+  const blob = path.posix.join("blobs", `${contentHash}.${call.output.format}`);
+  const blobPath = resolveContained(cacheRoot, blob);
+  await mkdir(path.dirname(blobPath), { recursive: true });
+  await mkdir(path.dirname(indexPath), { recursive: true });
+  await assertNoSymlinkComponents(cacheRoot, blobPath);
+  await assertNoSymlinkComponents(cacheRoot, indexPath);
+  try {
+    await writeFile(blobPath, bytes, { flag: "wx", mode: 0o600 });
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      !("code" in error) ||
+      error.code !== "EEXIST" ||
+      sha256(await readFile(blobPath)) !== contentHash
+    ) {
+      throw error;
+    }
+  }
+  const index: CacheIndex = {
+    blob,
+    cacheKey: call.cacheKey,
+    contentHash,
+    ...(requestId === undefined ? {} : { requestId }),
+    version: 1,
+  };
+  await writeJsonAtomic(indexPath, index);
+  return blobPath;
+}
+
 async function executeCall(
   call: PlannedCall,
   manifest: Manifest,
@@ -188,24 +308,29 @@ async function executeCall(
   processors: AssetProcessors,
   clock: Clock,
   logger: Logger,
+  budget: ExecutionBudget,
 ): Promise<CandidateRecord> {
-  const cachePath = path.join(
-    outDir,
-    ".fal-tools",
-    "cache",
-    call.cacheKey,
-    `asset.${call.output.format}`,
-  );
+  const cacheRoot = path.join(outDir, ".fal-tools", "cache");
+  await mkdir(cacheRoot, { recursive: true });
+  await assertNoSymlinkComponents(outDir, cacheRoot);
+  const indexPath = path.join(cacheRoot, "requests", `${call.cacheKey}.json`);
   const candidatePath = path.join(
     outDir,
     "candidates",
     `${call.output.stem}.${call.variantId}.${call.output.format}`,
   );
-  if (await isFilePresent(cachePath)) {
+  const cached = await readCache(cacheRoot, indexPath, call);
+  if (cached !== undefined) {
     logger.info("using content-addressed cache", {
       candidateId: call.candidateId,
     });
-    return materializeCandidate(call, cachePath, candidatePath);
+    return materializeCandidate(
+      call,
+      cached.blobPath,
+      candidatePath,
+      outDir,
+      cached.requestId,
+    );
   }
 
   const prompt = await loadPrompt(manifest, manifestPath, call);
@@ -215,6 +340,7 @@ async function executeCall(
     providers,
     clock,
     logger,
+    budget,
   );
   const processor = processors[call.kind];
   const bytes =
@@ -230,22 +356,18 @@ async function executeCall(
             steps: call.post,
           });
         })();
-  await mkdir(path.dirname(cachePath), { recursive: true });
-  try {
-    await writeFile(cachePath, bytes, { flag: "wx", mode: 0o600 });
-  } catch (error) {
-    if (
-      !(error instanceof Error) ||
-      !("code" in error) ||
-      error.code !== "EEXIST"
-    ) {
-      throw error;
-    }
-  }
+  const blobPath = await writeCache(
+    cacheRoot,
+    indexPath,
+    call,
+    bytes,
+    generated.requestId,
+  );
   return materializeCandidate(
     call,
-    cachePath,
+    blobPath,
     candidatePath,
+    outDir,
     generated.requestId,
   );
 }
@@ -255,10 +377,22 @@ async function isCandidateIntact(
   outDir: string,
 ): Promise<boolean> {
   try {
-    const filePath = resolveContained(outDir, candidate.file);
+    const filePath = await resolveContainedExisting(outDir, candidate.file);
     return sha256(await readFile(filePath)) === candidate.contentHash;
   } catch {
     return false;
+  }
+}
+
+async function assertStoredPlan(
+  planPath: string,
+  expectedPlanHash: string,
+): Promise<void> {
+  const stored = JSON.parse(await readFile(planPath, "utf8")) as {
+    planHash?: string;
+  };
+  if (stored.planHash !== expectedPlanHash) {
+    throw new Error("stored plan does not match the immutable plan");
   }
 }
 
@@ -271,15 +405,27 @@ export async function runPlan(
   logger: Logger,
 ): Promise<RunLedger> {
   const { manifest, plan } = await createPlan(manifestPath, providers, clock);
-  assertBudgets(manifest, plan, options);
+  const budget = assertBudgets(manifest, plan, options);
   const outDir = path.resolve(options.outDir);
   const ledgerPath = path.join(outDir, "run.json");
   const planPath = path.join(outDir, "plan.json");
   await mkdir(outDir, { recursive: true });
-  await writeJsonAtomic(planPath, plan);
+  if ((await lstat(outDir)).isSymbolicLink()) {
+    throw new Error("run directory cannot be a symlink");
+  }
+  const isLedgerPresent = await isFilePresent(ledgerPath);
+  const isPlanPresent = await isFilePresent(planPath);
+  if (isLedgerPresent && options.isResume !== true) {
+    throw new Error("run directory already contains a ledger; use --resume");
+  }
+  if (isPlanPresent) {
+    await assertStoredPlan(planPath, plan.planHash);
+  } else {
+    await writeJsonAtomic(planPath, plan);
+  }
 
   let ledger: RunLedger;
-  if (options.isResume === true && (await isFilePresent(ledgerPath))) {
+  if (options.isResume === true && isLedgerPresent) {
     ledger = await loadRunLedger(ledgerPath);
     if (
       ledger.planHash !== plan.planHash ||
@@ -337,6 +483,7 @@ export async function runPlan(
             processors,
             clock,
             logger,
+            budget,
           );
           ledger.candidates.push(candidate);
           await persist();

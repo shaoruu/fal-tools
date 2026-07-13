@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  readFile,
+  realpath,
+  rename,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 
 import { parse } from "yaml";
@@ -96,6 +103,51 @@ export function resolveContained(
     throw new Error("path escapes its allowed directory");
   }
   return resolved;
+}
+
+export async function resolveContainedExisting(
+  baseDir: string,
+  relativePath: string,
+): Promise<string> {
+  const resolved = resolveContained(baseDir, relativePath);
+  const [realBase, realTarget] = await Promise.all([
+    realpath(baseDir),
+    realpath(resolved),
+  ]);
+  if (
+    realTarget !== realBase &&
+    !realTarget.startsWith(`${realBase}${path.sep}`)
+  ) {
+    throw new Error("path resolves outside its allowed directory");
+  }
+  return realTarget;
+}
+
+export async function assertNoSymlinkComponents(
+  baseDir: string,
+  targetPath: string,
+): Promise<void> {
+  const realBase = await realpath(baseDir);
+  const relative = path.relative(realBase, path.resolve(targetPath));
+  assertSafeRelativePath(relative, "path");
+  let current = realBase;
+  for (const component of relative.split(path.sep).filter(Boolean)) {
+    current = path.join(current, component);
+    try {
+      if ((await lstat(current)).isSymbolicLink()) {
+        throw new Error("symlinked paths are not allowed");
+      }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        return;
+      }
+      throw error;
+    }
+  }
 }
 
 export async function writeJsonAtomic(

@@ -32,8 +32,10 @@ provider-specific units without changing manifest job semantics.
 
 The adapter classifies network failures and HTTP 408, 429, 500, 502, 503, and
 504 responses as transient, except caller-requested timeouts. Core retries only
-those failures, for at most three attempts with bounded exponential delay.
-Validation, authentication, unsupported model, malformed output, download-size,
-and other permanent failures are not retried.
+those failures, for at most three attempts with bounded exponential delay. Every
+attempt consumes the hard call ceiling and its known price consumes the hard
+cost ceiling before submission. Validation, authentication, unsupported model,
+malformed output, unsafe download destination, download-size, and other
+permanent failures are not retried.
 
 Tests use a fake provider and never contact fal.ai.

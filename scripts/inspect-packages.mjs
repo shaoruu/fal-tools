@@ -1,5 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, readdir, rm } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
@@ -19,6 +27,7 @@ const allowedRoots = new Set([
   "package.json",
   "README.md",
 ]);
+const archives = [];
 
 await rm(artifactDirectory, { force: true, recursive: true });
 await mkdir(artifactDirectory, { recursive: true });
@@ -36,6 +45,13 @@ for (const packageDirectory of packageDirectories) {
     throw new Error(`pack did not create an archive for ${packageDirectory}`);
   }
   const archivePath = path.join(artifactDirectory, archive);
+  const packageManifest = JSON.parse(
+    await readFile(
+      path.join(repositoryRoot, packageDirectory, "package.json"),
+      "utf8",
+    ),
+  );
+  archives.push({ archivePath, name: packageManifest.name });
   const entries = execFileSync("tar", ["-tzf", archivePath], {
     encoding: "utf8",
   })
@@ -55,17 +71,60 @@ for (const packageDirectory of packageDirectories) {
       throw new Error(`${archive} contains sensitive-looking entry ${entry}`);
     }
   }
-  for (const required of [
+  const requiredEntries = [
     "package/package.json",
     "package/LICENSE",
     "package/NOTICE",
-  ]) {
+    "package/dist/index.js",
+    "package/dist/index.d.ts",
+  ];
+  if (packageDirectory === "packages/cli") {
+    requiredEntries.push("package/dist/cli.js", "package/dist/cli.d.ts");
+  }
+  for (const required of requiredEntries) {
     if (!entries.includes(required)) {
       throw new Error(`${archive} is missing ${required}`);
     }
   }
 }
 
+const consumerDirectory = await mkdtemp(
+  path.join(os.tmpdir(), "fal-tools-pack-consumer-"),
+);
+try {
+  await writeFile(
+    path.join(consumerDirectory, "package.json"),
+    JSON.stringify({
+      dependencies: Object.fromEntries(
+        archives.map(({ archivePath, name }) => [name, `file:${archivePath}`]),
+      ),
+      private: true,
+      type: "module",
+    }),
+    { mode: 0o600 },
+  );
+  execFileSync("pnpm", ["install"], {
+    cwd: consumerDirectory,
+    stdio: "pipe",
+  });
+  execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "--eval",
+      'await Promise.all(["@fal-tools/core","@fal-tools/provider-fal","@fal-tools/image","@fal-tools/audio","fal-tools"].map((name) => import(name)));',
+    ],
+    { cwd: consumerDirectory, stdio: "pipe" },
+  );
+  execFileSync(
+    path.join(consumerDirectory, "node_modules", ".bin", "fal-tools"),
+    ["--help"],
+    { cwd: consumerDirectory, stdio: "pipe" },
+  );
+} finally {
+  await rm(consumerDirectory, { force: true, recursive: true });
+}
+
 process.stdout.write(
-  `Inspected ${packageDirectories.length} packed package allowlists.\n`,
+  `Inspected and consumed ${packageDirectories.length} packed packages.\n`,
 );

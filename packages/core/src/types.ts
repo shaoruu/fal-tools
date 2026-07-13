@@ -135,6 +135,8 @@ export type PlannedCall = {
   model: string;
   output: OutputSpec;
   post: PostStep[];
+  price: Price | null;
+  providerFormat: string;
   promptFile?: string;
   promptHash: string;
   provider: string;

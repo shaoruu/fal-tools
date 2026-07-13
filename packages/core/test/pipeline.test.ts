@@ -1,4 +1,11 @@
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -163,6 +170,22 @@ describe("planning and safety", () => {
     );
   });
 
+  it("keeps provider and post-processed formats distinct", async () => {
+    const directory = await temporaryDirectory();
+    const manifestPath = await writeManifest(directory, [
+      job({
+        post: [{ format: "jpeg", type: "image-convert" }],
+      }),
+    ]);
+    const plan = await createPipeline({
+      clock: immediateClock,
+      providers: { fal: new FakeProvider() },
+    }).plan({ manifestPath });
+
+    expect(plan.calls[0]?.providerFormat).toBe("png");
+    expect(plan.calls[0]?.output.format).toBe("jpeg");
+  });
+
   it("rejects secrets and absolute machine paths", async () => {
     const directory = await temporaryDirectory();
     const secret = `${["api", "key"].join("_")}=${"x".repeat(24)}`;
@@ -184,6 +207,40 @@ describe("planning and safety", () => {
     await expect(pipeline.plan({ manifestPath: pathManifest })).rejects.toThrow(
       "absolute machine path",
     );
+  });
+
+  it("rejects unsafe and symlinked prompt files", async () => {
+    const directory = await temporaryDirectory();
+    const outsideDirectory = await temporaryDirectory();
+    const outsidePrompt = path.join(outsideDirectory, "prompt.txt");
+    await writeFile(outsidePrompt, "A harmless external prompt", {
+      mode: 0o600,
+    });
+    await symlink(outsidePrompt, path.join(directory, "linked-prompt.txt"));
+    const linkedJob = job();
+    delete linkedJob.prompt;
+    linkedJob.promptFile = "linked-prompt.txt";
+    const pipeline = createPipeline({
+      clock: immediateClock,
+      providers: { fal: new FakeProvider() },
+    });
+    await expect(
+      pipeline.plan({
+        manifestPath: await writeManifest(directory, [linkedJob]),
+      }),
+    ).rejects.toThrow("outside its allowed directory");
+
+    const privatePrompt = path.join(directory, "private-prompt.txt");
+    const secret = `${["api", "key"].join("_")}=${"y".repeat(24)}`;
+    await writeFile(privatePrompt, secret, { mode: 0o600 });
+    const privateJob = job();
+    delete privateJob.prompt;
+    privateJob.promptFile = "private-prompt.txt";
+    await expect(
+      pipeline.plan({
+        manifestPath: await writeManifest(directory, [privateJob]),
+      }),
+    ).rejects.toThrow("secret-like");
   });
 
   it("redacts credentials, prompt fields, and signed URLs from logs", () => {
@@ -214,6 +271,9 @@ describe("planning and safety", () => {
     expect(JSON.stringify(records)).not.toContain("private response");
     expect(JSON.stringify(records)).not.toContain(credential);
     expect(JSON.stringify(records)).not.toContain(signedUrl);
+
+    logger.warn(`${credential} then ${credential}`);
+    expect(JSON.stringify(records)).not.toContain(credential);
   });
 });
 
@@ -235,6 +295,14 @@ describe("budgeted execution and recovery", () => {
       }),
     ).rejects.toThrow("max-calls");
     expect(provider.calls).toBe(0);
+
+    await expect(
+      pipeline.run({
+        manifestPath,
+        maxCalls: Number.NaN,
+        outDir: path.join(directory, "invalid"),
+      }),
+    ).rejects.toThrow("max-calls");
   });
 
   it("fails closed for unpriced calls unless explicitly allowed", async () => {
@@ -288,6 +356,40 @@ describe("budgeted execution and recovery", () => {
     expect(provider.calls).toBe(1);
   });
 
+  it("rejects corrupted cache blobs", async () => {
+    const directory = await temporaryDirectory();
+    const provider = new FakeProvider();
+    const manifestPath = await writeManifest(directory, [job()]);
+    const outDir = path.join(directory, "run");
+    const pipeline = createPipeline({
+      clock: immediateClock,
+      providers: { fal: provider },
+    });
+    const plan = await pipeline.plan({ manifestPath });
+    await pipeline.run({ manifestPath, maxCalls: 1, outDir });
+    const indexPath = path.join(
+      outDir,
+      ".fal-tools",
+      "cache",
+      "requests",
+      `${plan.calls[0]?.cacheKey}.json`,
+    );
+    const index = JSON.parse(await readFile(indexPath, "utf8")) as {
+      blob: string;
+    };
+    await writeFile(
+      path.join(outDir, ".fal-tools", "cache", index.blob),
+      "corrupt",
+      { mode: 0o600 },
+    );
+    await rm(path.join(outDir, "run.json"));
+
+    await expect(
+      pipeline.run({ manifestPath, maxCalls: 1, outDir }),
+    ).rejects.toThrow("failed candidates");
+    expect(provider.calls).toBe(1);
+  });
+
   it("retries only transient failures", async () => {
     const directory = await temporaryDirectory();
     const transientProvider = new FakeProvider({ transientFailures: 2 });
@@ -297,10 +399,23 @@ describe("budgeted execution and recovery", () => {
       providers: { fal: transientProvider },
     }).run({
       manifestPath,
-      maxCalls: 1,
+      maxCalls: 3,
       outDir: path.join(directory, "transient"),
     });
     expect(transientProvider.calls).toBe(3);
+
+    const budgetedProvider = new FakeProvider({ transientFailures: 2 });
+    await expect(
+      createPipeline({
+        clock: immediateClock,
+        providers: { fal: budgetedProvider },
+      }).run({
+        manifestPath,
+        maxCalls: 2,
+        outDir: path.join(directory, "budgeted-retries"),
+      }),
+    ).rejects.toThrow("failed candidates");
+    expect(budgetedProvider.calls).toBe(2);
 
     const permanentProvider = new FakeProvider({ isPermanentFailure: true });
     await expect(
@@ -382,5 +497,41 @@ describe("objective QA and explicit export", () => {
     expect(files).toEqual(imageBytes);
     const persisted = await loadRunLedger(path.join(outDir, "run.json"));
     expect(persisted.candidates).toHaveLength(2);
+  });
+
+  it("does not allow an audit override to weaken manifest QA", async () => {
+    const directory = await temporaryDirectory();
+    const imageBytes = await import("sharp").then(({ default: sharp }) =>
+      sharp({
+        create: {
+          background: { alpha: 1, b: 0, g: 0, r: 255 },
+          channels: 4,
+          height: 4,
+          width: 4,
+        },
+      })
+        .png()
+        .toBuffer(),
+    );
+    const manifestPath = await writeManifest(directory, [
+      job({ qa: { image: { minWidth: 8 } } }),
+    ]);
+    const outDir = path.join(directory, "strict-run");
+    const pipeline = createPipeline({
+      auditors: { image: imageAuditor },
+      clock: immediateClock,
+      providers: { fal: new FakeProvider({ bytes: imageBytes }) },
+    });
+    await pipeline.run({ manifestPath, maxCalls: 1, outDir });
+    const profilePath = path.join(directory, "weaker-profile.json");
+    await writeFile(profilePath, JSON.stringify({ image: { minWidth: 1 } }), {
+      mode: 0o600,
+    });
+    const ledger = await pipeline.audit({
+      profilePath,
+      runPath: path.join(outDir, "run.json"),
+    });
+    expect(ledger.candidates[0]?.audit?.isPassed).toBe(false);
+    expect(ledger.candidates[0]?.audit?.profile.image?.minWidth).toBe(8);
   });
 });

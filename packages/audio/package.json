@@ -22,7 +22,7 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",
     "clean": "rm -rf dist",
-    "prepack": "node ../../scripts/sync-package-legal.mjs",
+    "prepack": "pnpm build && node ../../scripts/sync-package-legal.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

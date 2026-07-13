@@ -5,7 +5,13 @@ export const jsonObjectSchema = z.record(z.string(), z.json());
 const outputSchema = z
   .object({
     format: z.string().regex(/^[a-z0-9]+$/),
-    stem: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/i),
+    stem: z
+      .string()
+      .regex(/^[a-z0-9][a-z0-9_-]*(?:\.[a-z0-9_-]+)*$/)
+      .refine(
+        (stem) => !/^(?:aux|con|nul|prn|com[1-9]|lpt[1-9])(?:\.|$)/.test(stem),
+        "output stem is reserved on Windows",
+      ),
   })
   .strict();
 
@@ -58,14 +64,14 @@ export const qaProfileSchema = z
 
 const variantSchema = z
   .object({
-    id: z.string().regex(/^[a-z0-9][a-z0-9_-]*$/i),
+    id: z.string().regex(/^[a-z0-9][a-z0-9_-]*$/),
     input: jsonObjectSchema.optional(),
   })
   .strict();
 
 const jobSchema = z
   .object({
-    id: z.string().regex(/^[a-z0-9][a-z0-9_-]*$/i),
+    id: z.string().regex(/^[a-z0-9][a-z0-9_-]*$/),
     input: jsonObjectSchema.default({}),
     kind: z.enum(["audio", "image"]),
     model: z.string().min(1),
@@ -75,7 +81,7 @@ const jobSchema = z
       .optional(),
     prompt: z.string().min(1).optional(),
     promptFile: z.string().min(1).optional(),
-    provider: z.string().regex(/^[a-z0-9][a-z0-9_-]*$/i),
+    provider: z.string().regex(/^[a-z0-9][a-z0-9_-]*$/),
     qa: qaProfileSchema.optional(),
     variants: z
       .union([

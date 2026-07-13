@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import process from "node:process";
 
 import { Command, InvalidArgumentError, Option } from "commander";

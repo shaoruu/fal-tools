@@ -71,7 +71,8 @@ Callers can supply the image/audio processors and auditors from
   ledgers retain SHA-256 digests.
 - Provider responses, headers, signed URLs, and prompt text are excluded from
   logs and provenance.
-- Only transient provider failures are retried, at most three attempts.
+- Only transient provider failures are retried, at most three attempts. Every
+  attempt consumes the hard call and known-cost ceilings before submission.
 - No generated binary belongs in the repository or npm package.
 
 See [architecture](docs/architecture.md), [manifest format](docs/manifests.md),

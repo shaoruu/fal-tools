@@ -1,6 +1,7 @@
 export { auditRun } from "./audit.js";
 export { exportSelection } from "./export.js";
 export {
+  assertNoSymlinkComponents,
   canonicalJson,
   loadManifest,
   loadQaProfile,
@@ -8,6 +9,7 @@ export {
   loadSelection,
   readStructuredFile,
   resolveContained,
+  resolveContainedExisting,
   sha256,
   writeJsonAtomic,
 } from "./io.js";

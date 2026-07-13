@@ -17,8 +17,9 @@ The parser rejects:
 - extra schema fields.
 
 Inline prompts are allowed for sanitized examples and private local manifests.
-Prompt files must be relative to the manifest and remain contained in its
-directory. Plans and ledgers retain only SHA-256 prompt digests.
+Prompt files must be relative to the manifest, remain contained after symlink
+resolution, stay below 1 MiB, and pass the same content scan as inline prompts.
+Plans and ledgers retain only SHA-256 prompt digests.
 
 ## Logging and provenance
 
