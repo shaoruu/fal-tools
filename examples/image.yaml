@@ -1,0 +1,32 @@
+version: 1
+concurrency: 1
+budget:
+  maxCalls: 2
+  isUnpricedCallsAllowed: false
+capabilities:
+  fal:
+    fal-ai/example-image:
+      kinds:
+        - image
+      outputFormats:
+        - png
+jobs:
+  - id: geometric-study
+    kind: image
+    provider: fal
+    model: fal-ai/example-image
+    prompt: A cobalt paper triangle beside two matte ivory circles
+    input:
+      image_size: square
+    variants: 2
+    output:
+      stem: geometric-study
+      format: png
+    post:
+      - type: image-convert
+        format: png
+    qa:
+      image:
+        minWidth: 512
+        minHeight: 512
+        isDuplicateAllowed: false

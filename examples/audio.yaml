@@ -1,0 +1,32 @@
+version: 1
+concurrency: 1
+budget:
+  maxCalls: 1
+  isUnpricedCallsAllowed: false
+capabilities:
+  fal:
+    fal-ai/example-audio:
+      kinds:
+        - audio
+      outputFormats:
+        - wav
+jobs:
+  - id: synthetic-tone
+    kind: audio
+    provider: fal
+    model: fal-ai/example-audio
+    prompt: A brief clean synthesized marimba interval with a quiet tail
+    input: {}
+    output:
+      stem: synthetic-tone
+      format: wav
+    post:
+      - type: audio-convert
+        format: wav
+        sampleRate: 48000
+        channels: 1
+    qa:
+      audio:
+        minDurationSeconds: 0.5
+        maxClippedSampleRatio: 0
+        maxPeakDbfs: -0.1

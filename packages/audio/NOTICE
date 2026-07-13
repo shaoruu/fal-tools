@@ -1,0 +1,17 @@
+fal-tools
+Copyright 2026 fal-tools contributors
+
+This product includes software developed by fal-tools contributors and is
+licensed under the Apache License, Version 2.0.
+
+The optional @fal-tools/image package depends on sharp. sharp is licensed under
+Apache-2.0 and uses libvips, which is licensed under LGPL-2.1-or-later. Neither
+sharp nor libvips is copied into fal-tools source or bundled into fal-tools
+package output. Package managers may install platform-specific sharp/libvips
+artifacts as separate dependencies.
+
+The @fal-tools/audio package invokes user-installed ffmpeg and ffprobe from
+PATH. fal-tools does not distribute or bundle FFmpeg.
+
+Complete machine-readable dependency information can be generated with
+`pnpm sbom`. Release automation generates an SBOM and packed-package inventory.

@@ -1,0 +1,36 @@
+{
+  "name": "@fal-tools/audio",
+  "version": "0.1.0",
+  "description": "Objective audio processing and QA for fal-tools",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "clean": "rm -rf dist",
+    "prepack": "pnpm build && node ../../scripts/sync-package-legal.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fal-tools/core": "workspace:*",
+    "execa": "9.6.1"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}
