@@ -77,6 +77,15 @@ That value is an illustrative schema example, not a fal.ai price. Maintain a
 private, current capability source for real execution. No fal price table is
 baked into this repository.
 
+Agents can inspect the normalized registry without provider calls:
+
+```sh
+fal-tools models private-manifest.yaml --json
+```
+
+The result is sorted by provider/model and reports kinds, output formats, and
+either complete pricing provenance or `status: "unpriced"`.
+
 ## QA profiles
 
 Image gates can set minimum dimensions, alpha required, and duplicate allowed.

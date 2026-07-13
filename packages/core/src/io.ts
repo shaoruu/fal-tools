@@ -49,6 +49,20 @@ export async function readStructuredFile(filePath: string): Promise<JsonValue> {
 
 export async function loadManifest(manifestPath: string): Promise<Manifest> {
   const parsed = manifestSchema.parse(await readStructuredFile(manifestPath));
+  for (const [provider, capabilities] of Object.entries(
+    parsed.capabilities ?? {},
+  )) {
+    assertPublicSafe(provider, `capabilities.${provider}`);
+    for (const [model, capability] of Object.entries(capabilities)) {
+      assertPublicSafe(model, `capabilities.${provider}.${model}`);
+      if (capability.price !== undefined) {
+        assertPublicSafe(
+          capability.price.source,
+          `capabilities.${provider}.${model}.price.source`,
+        );
+      }
+    }
+  }
   for (const job of parsed.jobs) {
     assertPublicSafe(job.input, `jobs.${job.id}.input`);
     if (job.prompt !== undefined) {

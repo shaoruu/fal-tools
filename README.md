@@ -5,8 +5,8 @@ fal.ai media generation. It plans an exact call graph before spending, executes
 within hard budgets, records prompt hashes instead of prompt text, performs
 objective media checks, and exports only explicit QA-passing selections.
 
-This repository is an initial v0. The interfaces are intentionally small and may
-change before a public release.
+This public repository is an initial v0. The interfaces are intentionally small
+and may evolve during v0 with versioned machine-output contracts.
 
 ## Requirements
 
@@ -26,14 +26,28 @@ pnpm build
 
 pnpm fal-tools plan examples/image.yaml
 pnpm fal-tools plan examples/image.yaml --json
-pnpm fal-tools run path/to/private-manifest.yaml --out .fal-tools/run-001 --max-calls 4 --max-cost 1
-pnpm fal-tools audit .fal-tools/run-001/run.json --profile examples/qa-image.yaml
-pnpm fal-tools export examples/selection.yaml --from .fal-tools/run-001 --to path/to/destination
+pnpm fal-tools models examples/image.yaml --json
+pnpm fal-tools run path/to/private-manifest.yaml --out .fal-tools/run-001 --max-calls 4 --max-cost 1 --jsonl
+pnpm fal-tools audit .fal-tools/run-001/run.json --profile examples/qa-image.yaml --json
+pnpm fal-tools export examples/selection.yaml --from .fal-tools/run-001 --to path/to/destination --json
 ```
 
 Run directories are candidate workspaces, not product export destinations. They
 contain `plan.json`, `run.json`, ignored candidates, and an ignored local cache.
 Export is a separate, explicit operation.
+
+## Autonomous agents
+
+The CLI never prompts or starts a persistent process. `plan`, `models`, `audit`,
+and `export` support a single `--json` result envelope. `run --jsonl` emits
+redacted log records followed by one result record; `run --json` suppresses
+progress and emits one document. Structured failures include stable codes,
+hints, and deterministic exit categories for usage/input, budget/pricing, run,
+QA, export, and resume/lock failures.
+
+See the complete [autonomous agent workflow](docs/agents.md), including private
+manifest creation, capability discovery, dry-run, bounded execution, resume,
+audit, selection, and export.
 
 ## Library
 
