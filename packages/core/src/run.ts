@@ -575,7 +575,9 @@ export async function runPlan(
     );
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "EEXIST") {
-      throw new Error("run directory is locked by another process");
+      throw new Error("run directory is locked by another process", {
+        cause: error,
+      });
     }
     throw error;
   }
