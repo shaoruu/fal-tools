@@ -132,6 +132,7 @@ export type PlannedCall = {
   input: JsonObject;
   jobId: string;
   kind: AssetKind;
+  maxAttempts: number;
   model: string;
   output: OutputSpec;
   post: PostStep[];

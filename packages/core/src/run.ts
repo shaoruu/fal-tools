@@ -156,8 +156,7 @@ async function generateWithRetry(
   if (provider === undefined) {
     throw new Error(`provider unavailable for ${call.candidateId}`);
   }
-  const maxAttempts = 3;
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+  for (let attempt = 1; attempt <= call.maxAttempts; attempt += 1) {
     const attemptCostUsd = call.price?.amountUsd ?? 0;
     if (budget.usedCalls >= budget.maxCalls) {
       throw new Error("hard max-calls budget exhausted before retry");
@@ -188,7 +187,7 @@ async function generateWithRetry(
       const normalizedError =
         error instanceof Error ? error : new Error("provider failure");
       const isTransient = provider.isTransientError(normalizedError);
-      if (!isTransient || attempt === maxAttempts) {
+      if (!isTransient || attempt === call.maxAttempts) {
         throw normalizedError;
       }
       logger.warn("transient provider failure; retrying", {
