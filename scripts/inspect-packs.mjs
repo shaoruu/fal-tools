@@ -37,7 +37,13 @@ for (const packageName of packages) {
     "pnpm",
     ["--dir", packageDirectory, "pack", "--pack-destination", artifacts],
     { encoding: "utf8" },
-  ).trim();
+  )
+    .trim()
+    .split(/\r?\n/u)
+    .at(-1);
+  if (output === undefined) {
+    throw new Error(`${packageName}: pnpm pack did not return a tarball path`);
+  }
   const tarball = path.isAbsolute(output)
     ? output
     : path.join(packageDirectory, output);

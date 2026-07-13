@@ -20,7 +20,7 @@
     "security:repo": "node scripts/repository-guard.mjs",
     "security:staged": "node scripts/staged-guard.mjs",
     "notices": "node scripts/generate-notices.mjs",
-    "sbom": "pnpm dlx @cyclonedx/cyclonedx-npm@latest --output-file artifacts/sbom.cdx.json",
+    "sbom": "node scripts/generate-sbom.mjs",
     "prepare": "simple-git-hooks"
   },
   "devDependencies": {
