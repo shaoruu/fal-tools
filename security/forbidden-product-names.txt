@@ -1,0 +1,2 @@
+# Add one private product or customer name per line before local development.
+# Matching is case-insensitive. Keep this committed file free of private names.

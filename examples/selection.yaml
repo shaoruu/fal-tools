@@ -1,0 +1,4 @@
+version: 1
+candidates:
+  - id: geometric-study.1
+    as: geometric-study.png

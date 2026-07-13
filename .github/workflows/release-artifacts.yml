@@ -1,0 +1,39 @@
+name: Release artifacts
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.13.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm test:smoke
+      - run: pnpm pack:inspect
+      - run: pnpm sbom
+      - name: Record dependency license inventory
+        run: pnpm licenses list --json > artifacts/third-party-licenses.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-review
+          path: |
+            artifacts/packs/*.tgz
+            artifacts/sbom.cdx.json
+            artifacts/third-party-licenses.json
+            NOTICE
+          if-no-files-found: error

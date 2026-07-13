@@ -1,0 +1,5 @@
+image:
+  minWidth: 512
+  minHeight: 512
+  isAlphaRequired: false
+  isDuplicateAllowed: false

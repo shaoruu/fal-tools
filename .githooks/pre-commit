@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+set -eu
+
+node scripts/security-checks.mjs --staged
+
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --redact
+fi
+
+if command -v trufflehog >/dev/null 2>&1; then
+  trufflehog git file://. --since-commit HEAD --only-verified --fail --no-update
+fi

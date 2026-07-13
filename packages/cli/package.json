@@ -1,0 +1,42 @@
+{
+  "name": "fal-tools",
+  "version": "0.1.0",
+  "description": "Manifest-driven fal.ai asset generation, QA, and provenance CLI",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "fal-tools": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "tsup src/cli.ts src/index.ts --format esm --dts --clean --banner.js '#!/usr/bin/env node'",
+    "clean": "rm -rf dist",
+    "prepack": "node ../../scripts/sync-package-legal.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fal-tools/audio": "workspace:*",
+    "@fal-tools/core": "workspace:*",
+    "@fal-tools/image": "workspace:*",
+    "@fal-tools/provider-fal": "workspace:*",
+    "commander": "15.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

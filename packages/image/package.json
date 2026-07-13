@@ -1,0 +1,36 @@
+{
+  "name": "@fal-tools/image",
+  "version": "0.1.0",
+  "description": "Objective image processing and QA for fal-tools",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean --external sharp",
+    "clean": "rm -rf dist",
+    "prepack": "node ../../scripts/sync-package-legal.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fal-tools/core": "workspace:*",
+    "sharp": "0.35.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

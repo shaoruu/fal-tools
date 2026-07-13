@@ -1,0 +1,36 @@
+{
+  "name": "@fal-tools/provider-fal",
+  "version": "0.1.0",
+  "description": "fal.ai generation provider for fal-tools",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "clean": "rm -rf dist",
+    "prepack": "node ../../scripts/sync-package-legal.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fal-ai/client": "1.10.1",
+    "@fal-tools/core": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}
