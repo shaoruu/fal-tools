@@ -56,7 +56,7 @@ export function assertSafeData(value: JsonValue, label = "input"): void {
   }
 
   if (value !== null && typeof value === "object") {
-    const record: JsonObject = value;
+    const record = value as JsonObject;
     for (const [key, entry] of Object.entries(record)) {
       if (secretKeyPattern.test(key) || key.toLowerCase() === "prompt") {
         throw new Error(`${label}.${key} is not allowed`);
@@ -85,7 +85,7 @@ export function canonicalJson(value: JsonValue): string {
     return `[${entries.map((entry) => canonicalJson(entry)).join(",")}]`;
   }
 
-  const record: JsonObject = value;
+  const record = value as JsonObject;
   return `{${Object.entries(record)
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
