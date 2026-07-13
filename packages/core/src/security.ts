@@ -91,13 +91,11 @@ export function redactText(value: string): string {
   }
   redacted = redacted.replace(/https?:\/\/\S+\?\S+/gi, "[REDACTED_URL]");
   redacted = redacted.replace(
-    /\/(?:Users|home|private|tmp|var|workspace)\/[^\s"'`]+/g,
+    /(?<!:)\/[A-Za-z0-9._-]+(?:\/[^\s"'`]+)+/g,
     "[REDACTED_PATH]",
   );
-  redacted = redacted.replace(
-    /[A-Za-z]:\\Users\\[^\s"'`]+/g,
-    "[REDACTED_PATH]",
-  );
+  redacted = redacted.replace(/[A-Za-z]:\\[^\s"'`]+/g, "[REDACTED_PATH]");
+  redacted = redacted.replace(/\\\\[^\\\s]+\\[^\s"'`]+/g, "[REDACTED_PATH]");
   for (const envValue of Object.values(process.env)) {
     if (envValue !== undefined && envValue.length >= 8) {
       redacted = redacted.replaceAll(envValue, "[REDACTED]");

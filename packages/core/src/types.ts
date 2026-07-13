@@ -188,6 +188,10 @@ export type RunLedger = {
   completedAt?: string;
   createdAt: string;
   failures: FailedCallRecord[];
+  limits: {
+    maxCalls: number;
+    maxCostUsd: number | null;
+  };
   manifestHash: string;
   planHash: string;
   status: "completed" | "failed" | "running";

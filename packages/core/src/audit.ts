@@ -116,14 +116,24 @@ export async function auditRun(
 ): Promise<RunLedger> {
   const runPath = path.resolve(options.runPath);
   const runDir = path.dirname(runPath);
-  const ledger = await loadRunLedger(runPath);
+  let ledger: RunLedger;
+  try {
+    ledger = await loadRunLedger(runPath);
+  } catch (error) {
+    throw new Error("run ledger validation failed", { cause: error });
+  }
   if (ledger.status !== "completed" || ledger.failures.length > 0) {
     throw new Error("only completed, failure-free runs can be audited");
   }
-  const overrideProfile =
-    options.profilePath === undefined
-      ? undefined
-      : await loadQaProfile(options.profilePath);
+  let overrideProfile: QaProfile | undefined;
+  try {
+    overrideProfile =
+      options.profilePath === undefined
+        ? undefined
+        : await loadQaProfile(options.profilePath);
+  } catch (error) {
+    throw new Error("QA profile validation failed", { cause: error });
+  }
 
   for (const candidate of ledger.candidates) {
     const auditor = auditors[candidate.kind];

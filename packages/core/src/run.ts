@@ -408,6 +408,9 @@ async function runLocked(
   if (isLedgerPresent && options.isResume !== true) {
     throw new Error("run directory already contains a ledger; use --resume");
   }
+  if (options.isResume === true && (!isLedgerPresent || !isPlanPresent)) {
+    throw new Error("resume requires an existing run ledger and stored plan");
+  }
   if (isPlanPresent) {
     await assertStoredPlan(planPath, plan.planHash);
   } else {
@@ -422,6 +425,12 @@ async function runLocked(
       ledger.manifestHash !== plan.manifestHash
     ) {
       throw new Error("resume ledger does not match the immutable plan");
+    }
+    if (
+      ledger.limits.maxCalls !== budget.maxCalls ||
+      ledger.limits.maxCostUsd !== (budget.maxCostUsd ?? null)
+    ) {
+      throw new Error("resume ceilings do not match the original run");
     }
     ledger.status = "running";
     delete ledger.completedAt;
@@ -439,6 +448,10 @@ async function runLocked(
       candidates: [],
       createdAt: clock.now().toISOString(),
       failures: [],
+      limits: {
+        maxCalls: budget.maxCalls,
+        maxCostUsd: budget.maxCostUsd ?? null,
+      },
       manifestHash: plan.manifestHash,
       planHash: plan.planHash,
       status: "running",

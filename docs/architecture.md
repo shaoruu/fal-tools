@@ -28,7 +28,8 @@ native media dependencies into consumers that do not need them.
    processed into a local cache and materialized in the candidate directory.
    Attempt/cost reservations are persisted before submission and survive resume.
    An exclusive run-directory lock prevents concurrent processes from sharing a
-   ledger or budget.
+   ledger or budget. Resume requires the existing ledger, stored plan, and exact
+   original ceilings.
 3. `audit` verifies candidate hashes before invoking an objective kind-specific
    auditor. Results are added to `run.json`.
 4. `export` verifies the ledger, required QA pass, source hash, explicit

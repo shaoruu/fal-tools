@@ -275,6 +275,10 @@ describe("planning and safety", () => {
 
     logger.warn(`${credential} then ${credential}`);
     expect(JSON.stringify(records)).not.toContain(credential);
+
+    const machinePath = ["", "opt", "private-space", "asset.txt"].join("/");
+    logger.error(`failed to read ${machinePath}`);
+    expect(JSON.stringify(records)).not.toContain(machinePath);
   });
 });
 
@@ -370,10 +374,38 @@ describe("budgeted execution and recovery", () => {
       outDir,
     });
     expect(provider.calls).toBe(1);
+    await expect(
+      pipeline.run({
+        isResume: true,
+        manifestPath,
+        maxCalls: 2,
+        outDir,
+      }),
+    ).rejects.toThrow("resume ceilings");
+    expect(provider.calls).toBe(1);
 
     await rm(path.join(outDir, "run.json"));
     await pipeline.run({ manifestPath, maxCalls: 1, outDir });
     expect(provider.calls).toBe(1);
+  });
+
+  it("requires an existing ledger for resume", async () => {
+    const directory = await temporaryDirectory();
+    const provider = new FakeProvider();
+    const manifestPath = await writeManifest(directory, [job()]);
+
+    await expect(
+      createPipeline({
+        clock: immediateClock,
+        providers: { fal: provider },
+      }).run({
+        isResume: true,
+        manifestPath,
+        maxCalls: 1,
+        outDir: path.join(directory, "missing-run"),
+      }),
+    ).rejects.toThrow("resume requires");
+    expect(provider.calls).toBe(0);
   });
 
   it("rejects corrupted cache blobs", async () => {

@@ -117,6 +117,42 @@ function runFailure(message: string): Failure {
   };
 }
 
+function filesystemFailure(
+  error: Error,
+  command: CommandName,
+): Failure | undefined {
+  const code = "code" in error ? error.code : undefined;
+  if (
+    typeof code !== "string" ||
+    !["EACCES", "EISDIR", "ENOENT", "ENOTDIR", "EPERM"].includes(code)
+  ) {
+    return undefined;
+  }
+  const message = redactText(error.message);
+  if (command === "export") {
+    return {
+      code: "EXPORT_INPUT_INVALID",
+      exitCode: 6,
+      hint: "Check the selection, run directory, and export destination.",
+      message,
+    };
+  }
+  if (command === "audit") {
+    return {
+      code: "AUDIT_INPUT_INVALID",
+      exitCode: 5,
+      hint: "Check the run ledger, candidates, and optional QA profile.",
+      message,
+    };
+  }
+  return {
+    code: "INPUT_REJECTED",
+    exitCode: 2,
+    hint: "Check the private manifest and required local files.",
+    message,
+  };
+}
+
 export function classifyFailure(error: Error, command: CommandName): Failure {
   if (error instanceof CommanderError) {
     return {
@@ -125,6 +161,10 @@ export function classifyFailure(error: Error, command: CommandName): Failure {
       hint: "Run `fal-tools --help` or `fal-tools <command> --help`.",
       message: redactText(error.message.replace(/^error:\s*/i, "")),
     };
+  }
+  const fileFailure = filesystemFailure(error, command);
+  if (fileFailure !== undefined) {
+    return fileFailure;
   }
   if (
     error.name === "ZodError" ||
@@ -135,6 +175,22 @@ export function classifyFailure(error: Error, command: CommandName): Failure {
   }
   const message = redactText(error.message);
   if (command === "export") {
+    if (/selection validation/i.test(message)) {
+      return {
+        code: "SELECTION_INVALID",
+        exitCode: 6,
+        hint: "Validate the strict v1 selection and retry export.",
+        message,
+      };
+    }
+    if (/run ledger validation/i.test(message)) {
+      return {
+        code: "EXPORT_LEDGER_INVALID",
+        exitCode: 6,
+        hint: "Use an intact completed run ledger before export.",
+        message,
+      };
+    }
     return {
       code: "EXPORT_REJECTED",
       exitCode: 6,
@@ -143,6 +199,22 @@ export function classifyFailure(error: Error, command: CommandName): Failure {
     };
   }
   if (command === "audit") {
+    if (/QA profile validation/i.test(message)) {
+      return {
+        code: "QA_PROFILE_INVALID",
+        exitCode: 5,
+        hint: "Validate the objective QA profile and retry audit.",
+        message,
+      };
+    }
+    if (/run ledger validation/i.test(message)) {
+      return {
+        code: "AUDIT_LEDGER_INVALID",
+        exitCode: 5,
+        hint: "Use an intact completed run ledger before audit.",
+        message,
+      };
+    }
     return {
       code: "AUDIT_FAILED",
       exitCode: 5,

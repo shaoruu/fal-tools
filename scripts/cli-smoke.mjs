@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -135,6 +135,43 @@ try {
     JSON.parse(malformed.stderr).error?.code !== "MANIFEST_INVALID"
   ) {
     throw new Error("Malformed manifests did not use the input exit category");
+  }
+  const malformedRunDirectory = path.join(temporaryDirectory, "malformed-run");
+  await mkdir(malformedRunDirectory);
+  const malformedRunPath = path.join(malformedRunDirectory, "run.json");
+  await writeFile(malformedRunPath, "{", { mode: 0o600 });
+  const malformedAudit = spawnSync(
+    process.execPath,
+    ["packages/cli/dist/cli.js", "audit", malformedRunPath, "--json"],
+    { cwd: path.resolve(import.meta.dirname, ".."), encoding: "utf8" },
+  );
+  if (
+    malformedAudit.status !== 5 ||
+    JSON.parse(malformedAudit.stderr).error?.code !== "AUDIT_LEDGER_INVALID"
+  ) {
+    throw new Error("Malformed audit ledgers did not use the QA exit category");
+  }
+  const malformedExport = spawnSync(
+    process.execPath,
+    [
+      "packages/cli/dist/cli.js",
+      "export",
+      path.resolve("examples/selection.yaml"),
+      "--from",
+      malformedRunDirectory,
+      "--to",
+      path.join(temporaryDirectory, "export"),
+      "--json",
+    ],
+    { cwd: path.resolve(import.meta.dirname, ".."), encoding: "utf8" },
+  );
+  if (
+    malformedExport.status !== 6 ||
+    JSON.parse(malformedExport.stderr).error?.code !== "EXPORT_LEDGER_INVALID"
+  ) {
+    throw new Error(
+      "Malformed export ledgers did not use the export exit category",
+    );
   }
   const help = execFileSync(
     process.execPath,

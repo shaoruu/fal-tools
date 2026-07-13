@@ -10,7 +10,7 @@ import {
   resolveContainedExisting,
   sha256,
 } from "./io.js";
-import type { ExportOptions } from "./types.js";
+import type { ExportOptions, RunLedger } from "./types.js";
 
 async function isFilePresent(filePath: string): Promise<boolean> {
   try {
@@ -21,16 +21,34 @@ async function isFilePresent(filePath: string): Promise<boolean> {
   }
 }
 
+async function loadExportLedger(runPath: string): Promise<RunLedger> {
+  try {
+    return await loadRunLedger(runPath);
+  } catch (error) {
+    throw new Error("run ledger validation failed", { cause: error });
+  }
+}
+
+async function loadExportSelection(
+  selectionPath: string,
+): ReturnType<typeof loadSelection> {
+  try {
+    return await loadSelection(selectionPath);
+  } catch (error) {
+    throw new Error("selection validation failed", { cause: error });
+  }
+}
+
 export async function exportSelection(
   options: ExportOptions,
 ): Promise<string[]> {
   const runDir = path.resolve(options.runDir);
   const destinationDir = path.resolve(options.destinationDir);
-  const ledger = await loadRunLedger(path.join(runDir, "run.json"));
+  const selection = await loadExportSelection(options.selectionPath);
+  const ledger = await loadExportLedger(path.join(runDir, "run.json"));
   if (ledger.status !== "completed" || ledger.failures.length > 0) {
     throw new Error("only completed, failure-free runs can be exported");
   }
-  const selection = await loadSelection(options.selectionPath);
   const selectedIds = new Set(selection.candidates.map((entry) => entry.id));
   if (selectedIds.size !== selection.candidates.length) {
     throw new Error("selection contains duplicate candidate IDs");
