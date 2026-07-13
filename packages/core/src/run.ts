@@ -1,9 +1,12 @@
+import { constants as fsConstants } from "node:fs";
 import {
   access,
   copyFile,
   lstat,
   mkdir,
+  open,
   readFile,
+  rm,
   stat,
   writeFile,
 } from "node:fs/promises";
@@ -386,23 +389,20 @@ async function assertStoredPlan(
   }
 }
 
-export async function runPlan(
+async function runLocked(
   manifestPath: string,
   options: RunOptions,
   providers: Providers,
   processors: AssetProcessors,
   clock: Clock,
   logger: Logger,
+  manifest: Manifest,
+  plan: PipelinePlan,
+  outDir: string,
 ): Promise<RunLedger> {
-  const { manifest, plan } = await createPlan(manifestPath, providers, clock);
   const budget = assertBudgets(manifest, plan, options);
-  const outDir = path.resolve(options.outDir);
   const ledgerPath = path.join(outDir, "run.json");
   const planPath = path.join(outDir, "plan.json");
-  await mkdir(outDir, { recursive: true });
-  if ((await lstat(outDir)).isSymbolicLink()) {
-    throw new Error("run directory cannot be a symlink");
-  }
   const isLedgerPresent = await isFilePresent(ledgerPath);
   const isPlanPresent = await isFilePresent(planPath);
   if (isLedgerPresent && options.isResume !== true) {
@@ -546,4 +546,53 @@ export async function runPlan(
     throw new Error("run completed with failed candidates");
   }
   return ledger;
+}
+
+export async function runPlan(
+  manifestPath: string,
+  options: RunOptions,
+  providers: Providers,
+  processors: AssetProcessors,
+  clock: Clock,
+  logger: Logger,
+): Promise<RunLedger> {
+  const { manifest, plan } = await createPlan(manifestPath, providers, clock);
+  const outDir = path.resolve(options.outDir);
+  await mkdir(outDir, { recursive: true });
+  if ((await lstat(outDir)).isSymbolicLink()) {
+    throw new Error("run directory cannot be a symlink");
+  }
+  const lockPath = path.join(outDir, ".fal-tools.run.lock");
+  let lockHandle;
+  try {
+    lockHandle = await open(
+      lockPath,
+      fsConstants.O_CREAT |
+        fsConstants.O_EXCL |
+        fsConstants.O_WRONLY |
+        fsConstants.O_NOFOLLOW,
+      0o600,
+    );
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "EEXIST") {
+      throw new Error("run directory is locked by another process");
+    }
+    throw error;
+  }
+  try {
+    return await runLocked(
+      manifestPath,
+      options,
+      providers,
+      processors,
+      clock,
+      logger,
+      manifest,
+      plan,
+      outDir,
+    );
+  } finally {
+    await lockHandle.close();
+    await rm(lockPath, { force: true });
+  }
 }

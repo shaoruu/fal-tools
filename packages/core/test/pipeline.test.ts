@@ -1,5 +1,6 @@
 import {
   access,
+  mkdir,
   mkdtemp,
   readFile,
   rm,
@@ -303,6 +304,25 @@ describe("budgeted execution and recovery", () => {
         outDir: path.join(directory, "invalid"),
       }),
     ).rejects.toThrow("max-calls");
+  });
+
+  it("rejects concurrent use of a run directory", async () => {
+    const directory = await temporaryDirectory();
+    const outDir = path.join(directory, "locked-run");
+    await mkdir(outDir);
+    await writeFile(path.join(outDir, ".fal-tools.run.lock"), "occupied", {
+      mode: 0o600,
+    });
+    const provider = new FakeProvider();
+    const manifestPath = await writeManifest(directory, [job()]);
+
+    await expect(
+      createPipeline({
+        clock: immediateClock,
+        providers: { fal: provider },
+      }).run({ manifestPath, maxCalls: 1, outDir }),
+    ).rejects.toThrow("locked by another process");
+    expect(provider.calls).toBe(0);
   });
 
   it("fails closed for unpriced calls unless explicitly allowed", async () => {
