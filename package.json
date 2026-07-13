@@ -1,0 +1,40 @@
+{
+  "name": "fal-tools-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.13.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "clean": "pnpm -r clean",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "lint": "eslint . && pnpm security:repo",
+    "typecheck": "pnpm build && pnpm -r typecheck",
+    "test": "vitest run",
+    "test:smoke": "node packages/cli/dist/main.js --help && node packages/cli/dist/main.js plan examples/basic.yaml --json",
+    "pack:inspect": "node scripts/inspect-packs.mjs",
+    "security:repo": "node scripts/repository-guard.mjs",
+    "security:staged": "node scripts/staged-guard.mjs",
+    "notices": "node scripts/generate-notices.mjs",
+    "sbom": "pnpm dlx @cyclonedx/cyclonedx-npm@latest --output-file artifacts/sbom.cdx.json",
+    "prepare": "simple-git-hooks"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.20.1",
+    "eslint": "10.7.0",
+    "prettier": "3.9.5",
+    "simple-git-hooks": "2.13.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.64.0",
+    "vitest": "4.1.10",
+    "zod": "4.4.3"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm security:staged"
+  }
+}

@@ -1,0 +1,8 @@
+fal-tools
+Copyright 2026 fal-tools contributors
+
+This product includes software developed by fal-tools contributors.
+
+Third-party dependency notices are generated from the lockfile with
+`pnpm notices`. The generated report is a release artifact and is not a
+substitute for the license files included by each dependency.

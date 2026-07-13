@@ -1,0 +1,6 @@
+version: 1
+kind: image
+checks:
+  minWidth: 128
+  minHeight: 128
+  maxBboxPaddingRatio: 0.95

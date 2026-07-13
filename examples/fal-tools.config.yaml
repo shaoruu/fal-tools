@@ -1,0 +1,12 @@
+version: 1
+providers:
+  fal:
+    models:
+      fal-ai/illustration-v0:
+        kind: image
+        artifactPath: [images, "0", url]
+        allowedInputKeys: [width, height]
+        pricing:
+          perCallUsd: 0
+          source: Synthetic documentation fixture
+          timestamp: 2026-07-13T00:00:00Z
