@@ -1,0 +1,23 @@
+version: 1
+concurrency: 2
+budget:
+  maxCostUsd: 1
+jobs:
+  - id: geometric-sample
+    kind: image
+    provider: fal
+    model: fal-ai/illustration-v0
+    promptFile: prompts/geometric-shape.txt
+    input:
+      width: 512
+      height: 512
+    variants: 2
+    output:
+      stem: geometric/sample
+      format: png
+    post:
+      - type: resize
+        width: 256
+        height: 256
+      - type: stripMetadata
+    qa: qa/image.yaml

@@ -1,0 +1,42 @@
+{
+  "name": "fal-tools",
+  "version": "0.1.0",
+  "description": "Secure, product-agnostic asset generation toolkit for fal.ai",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "fal-tools": "./dist/main.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@fal-tools/audio": "workspace:*",
+    "@fal-tools/core": "workspace:*",
+    "@fal-tools/image": "workspace:*",
+    "@fal-tools/provider-fal": "workspace:*",
+    "yaml": "2.9.0",
+    "zod": "4.4.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}
