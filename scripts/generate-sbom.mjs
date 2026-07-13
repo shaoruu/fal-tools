@@ -3,8 +3,9 @@ import { mkdirSync } from "node:fs";
 
 mkdirSync("artifacts", { recursive: true });
 execFileSync(
-  "pnpm",
+  "corepack",
   [
+    "pnpm",
     "sbom",
     "--sbom-format",
     "cyclonedx",
