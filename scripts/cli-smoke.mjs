@@ -76,6 +76,66 @@ try {
   ) {
     throw new Error("CLI usage errors did not use the stable machine contract");
   }
+  const failedRun = spawnSync(
+    process.execPath,
+    [
+      "packages/cli/dist/cli.js",
+      "run",
+      manifestPath,
+      "--out",
+      path.join(temporaryDirectory, "run"),
+      "--max-calls",
+      "1",
+      "--jsonl",
+    ],
+    { cwd: path.resolve(import.meta.dirname, ".."), encoding: "utf8" },
+  );
+  const failedRunLines = failedRun.stdout.trim().split("\n");
+  const failedRunResult = JSON.parse(failedRunLines.at(-1));
+  if (
+    failedRun.status !== 3 ||
+    failedRun.stderr !== "" ||
+    failedRunResult.type !== "result" ||
+    failedRunResult.isSuccess !== false ||
+    failedRunResult.error?.code !== "PRICING_REQUIRED"
+  ) {
+    throw new Error(
+      "CLI JSONL failures did not terminate with a result record",
+    );
+  }
+  const missingManifest = spawnSync(
+    process.execPath,
+    [
+      "packages/cli/dist/cli.js",
+      "plan",
+      path.join(temporaryDirectory, "missing.json"),
+      "--json",
+    ],
+    { cwd: path.resolve(import.meta.dirname, ".."), encoding: "utf8" },
+  );
+  const missingManifestError = JSON.parse(missingManifest.stderr);
+  if (
+    missingManifest.status !== 2 ||
+    missingManifestError.error?.code !== "INPUT_REJECTED" ||
+    missingManifest.stderr.includes(temporaryDirectory)
+  ) {
+    throw new Error(
+      "CLI errors did not redact private paths deterministically",
+    );
+  }
+  const malformedPath = path.join(temporaryDirectory, "malformed.json");
+  await writeFile(malformedPath, "{", { mode: 0o600 });
+  const malformed = spawnSync(
+    process.execPath,
+    ["packages/cli/dist/cli.js", "plan", malformedPath, "--json"],
+    { cwd: path.resolve(import.meta.dirname, ".."), encoding: "utf8" },
+  );
+  if (
+    malformed.status !== 2 ||
+    JSON.parse(malformed.stderr).error?.code !== "MANIFEST_INVALID"
+  ) {
+    throw new Error("Malformed manifests did not use the input exit category");
+  }
   const help = execFileSync(
     process.execPath,
     ["packages/cli/dist/cli.js", "--help"],
@@ -86,6 +146,13 @@ try {
     !help.includes("Agent workflow")
   ) {
     throw new Error("CLI help omitted the agent workflow contract");
+  }
+  const bare = spawnSync(process.execPath, ["packages/cli/dist/cli.js"], {
+    cwd: path.resolve(import.meta.dirname, ".."),
+    encoding: "utf8",
+  });
+  if (bare.status !== 0 || !bare.stdout.includes("Usage: fal-tools")) {
+    throw new Error("Bare CLI invocation did not provide help");
   }
   process.stdout.write(
     "CLI agent contract smoke tests passed without generation calls.\n",

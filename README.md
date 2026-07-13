@@ -40,10 +40,10 @@ Export is a separate, explicit operation.
 
 The CLI never prompts or starts a persistent process. `plan`, `models`, `audit`,
 and `export` support a single `--json` result envelope. `run --jsonl` emits
-redacted log records followed by one result record; `run --json` suppresses
-progress and emits one document. Structured failures include stable codes,
-hints, and deterministic exit categories for usage/input, budget/pricing, run,
-QA, export, and resume/lock failures.
+redacted log records followed by one stdout result record on success or failure;
+`run --json` suppresses progress and emits one document. Structured failures
+include stable codes, hints, and deterministic exit categories for usage/input,
+budget/pricing, run, QA, export, and resume/lock failures.
 
 See the complete [autonomous agent workflow](docs/agents.md), including private
 manifest creation, capability discovery, dry-run, bounded execution, resume,

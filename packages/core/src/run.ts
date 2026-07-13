@@ -515,10 +515,14 @@ async function runLocked(
           const provider = providers[call.provider];
           const normalizedError =
             error instanceof Error ? error : new Error("execution failure");
+          const isBudgetError = /hard max-(?:calls|cost) budget exhausted/.test(
+            normalizedError.message,
+          );
           ledger.failures.push({
             candidateId: call.candidateId,
-            errorCode:
-              provider?.isTransientError(normalizedError) === true
+            errorCode: isBudgetError
+              ? "BUDGET_EXHAUSTED"
+              : provider?.isTransientError(normalizedError) === true
                 ? "TRANSIENT_RETRIES_EXHAUSTED"
                 : "PERMANENT_EXECUTION_ERROR",
             status: "failed",
@@ -543,6 +547,13 @@ async function runLocked(
   );
   await writeJsonAtomic(ledgerPath, ledger);
   if (ledger.status === "failed") {
+    if (
+      ledger.failures.some(
+        (failure) => failure.errorCode === "BUDGET_EXHAUSTED",
+      )
+    ) {
+      throw new Error("hard budget exhausted during run");
+    }
     throw new Error("run completed with failed candidates");
   }
   return ledger;

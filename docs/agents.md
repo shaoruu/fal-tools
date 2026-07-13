@@ -18,10 +18,12 @@ Use `--json` when a command has one result:
 ```
 
 `run --jsonl` emits zero or more redacted log records followed by exactly one
-result record. Each record occupies one line and has `schemaVersion: 1`.
-`--json` suppresses progress logs so stdout remains one valid JSON document.
+result record on stdout, including failed runs. Each record occupies one line
+and has `schemaVersion: 1`. `--json` suppresses progress logs so stdout remains
+one valid JSON document on success.
 
-Machine errors are written to stderr:
+`--json` command errors are written to stderr. Expected audit gate results,
+including failed QA, remain result documents on stdout:
 
 ```json
 {

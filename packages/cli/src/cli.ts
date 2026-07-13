@@ -29,6 +29,7 @@ import {
   writeFailure,
   writeOutcome,
 } from "./output.js";
+import packageMetadata from "../package.json" with { type: "json" };
 
 type MachineOptions = {
   isJson?: boolean;
@@ -120,28 +121,35 @@ function modelResult(manifest: Manifest): {
     kinds: string[];
     model: string;
     outputFormats: string[];
-    pricing: object;
+    pricing:
+      | { status: "unpriced" }
+      | {
+          amountUsd: number;
+          retrievedAt: string;
+          source: string;
+          status: "known";
+          unit: "call";
+        };
     provider: string;
   }[];
 } {
-  const models = Object.entries(manifest.capabilities ?? {}).flatMap(
-    ([provider, capabilities]) =>
-      Object.entries(capabilities).map(([model, capability]) => ({
-        kinds: [...capability.kinds].sort(),
-        model,
-        outputFormats: [...capability.outputFormats].sort(),
-        pricing:
-          capability.price === undefined
-            ? { status: "unpriced" }
-            : {
-                amountUsd: capability.price.amountUsd,
-                retrievedAt: capability.price.retrievedAt,
-                source: capability.price.source,
-                status: "known",
-                unit: capability.price.unit,
-              },
-        provider,
-      })),
+  const models = Object.entries(manifest.capabilities?.fal ?? {}).map(
+    ([model, capability]) => ({
+      kinds: [...capability.kinds].sort(),
+      model,
+      outputFormats: [...capability.outputFormats].sort(),
+      pricing:
+        capability.price === undefined
+          ? ({ status: "unpriced" } as const)
+          : {
+              amountUsd: capability.price.amountUsd,
+              retrievedAt: capability.price.retrievedAt,
+              source: capability.price.source,
+              status: "known" as const,
+              unit: capability.price.unit,
+            },
+      provider: "fal",
+    }),
   );
   models.sort((left, right) =>
     `${left.provider}/${left.model}`.localeCompare(
@@ -171,7 +179,7 @@ const program = new Command()
   .description(
     "Non-interactive, private-first fal.ai planning, generation, objective QA, and export",
   )
-  .version("0.1.0")
+  .version(packageMetadata.version)
   .helpOption("-h, --help", "show command help")
   .showSuggestionAfterError(true)
   .exitOverride()
@@ -215,7 +223,7 @@ modelsCommand.action(
         : result.models
             .map(
               (entry) =>
-                `${entry.provider}/${entry.model} [${entry.kinds.join(",")}] ${entry.outputFormats.join(",")} ${"status" in entry.pricing && entry.pricing.status === "known" ? "priced" : "unpriced"}`,
+                `${entry.provider}/${entry.model} [${entry.kinds.join(",")}] ${entry.outputFormats.join(",")} ${entry.pricing.status === "known" ? "priced" : "unpriced"}`,
             )
             .join("\n");
     writeOutcome("models", mode, result, summary);
@@ -403,20 +411,24 @@ exportCommand.action(
   },
 );
 
-try {
-  await program.parseAsync();
-} catch (error) {
-  if (
-    error instanceof CommanderError &&
-    (error.code === "commander.helpDisplayed" ||
-      error.code === "commander.version")
-  ) {
-    process.exitCode = 0;
-  } else {
-    const normalizedError =
-      error instanceof Error ? error : new Error("command failed");
-    const failure = classifyFailure(normalizedError);
-    writeFailure(activeCommand, initialMode, failure);
-    process.exitCode = failure.exitCode;
+async function main(): Promise<void> {
+  if (process.argv.slice(2).length === 0) {
+    program.outputHelp();
+    return;
+  }
+  try {
+    await program.parseAsync();
+  } catch (error) {
+    if (error instanceof CommanderError && error.exitCode === 0) {
+      process.exitCode = 0;
+    } else {
+      const normalizedError =
+        error instanceof Error ? error : new Error("command failed");
+      const failure = classifyFailure(normalizedError, activeCommand);
+      writeFailure(activeCommand, initialMode, failure);
+      process.exitCode = failure.exitCode;
+    }
   }
 }
+
+await main();

@@ -434,7 +434,7 @@ describe("budgeted execution and recovery", () => {
         maxCalls: 2,
         outDir: path.join(directory, "budgeted-retries"),
       }),
-    ).rejects.toThrow("failed candidates");
+    ).rejects.toThrow("hard budget");
     expect(budgetedProvider.calls).toBe(2);
     await expect(
       createPipeline({
@@ -446,7 +446,7 @@ describe("budgeted execution and recovery", () => {
         maxCalls: 2,
         outDir: path.join(directory, "budgeted-retries"),
       }),
-    ).rejects.toThrow("failed candidates");
+    ).rejects.toThrow("hard budget");
     expect(budgetedProvider.calls).toBe(2);
 
     const permanentProvider = new FakeProvider({ isPermanentFailure: true });

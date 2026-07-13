@@ -25,75 +25,6 @@ type MachineEnvelope = {
   type?: "result";
 };
 
-const failureRules: {
-  code: string;
-  exitCode: number;
-  hint: string;
-  pattern: RegExp;
-}[] = [
-  {
-    code: "PRICING_REQUIRED",
-    exitCode: 3,
-    hint: "Add sourced pricing or explicitly allow unpriced calls in the private manifest.",
-    pattern: /pricing is UNKNOWN|unpriced/i,
-  },
-  {
-    code: "BUDGET_EXCEEDED",
-    exitCode: 3,
-    hint: "Raise the explicit hard ceiling or reduce the planned call graph.",
-    pattern: /max-calls|max-cost|hard budget|budget exhausted|exceed.*budget/i,
-  },
-  {
-    code: "RUN_LOCKED",
-    exitCode: 7,
-    hint: "Wait for the active process to finish before resuming this run directory.",
-    pattern: /locked by another process/i,
-  },
-  {
-    code: "RESUME_MISMATCH",
-    exitCode: 7,
-    hint: "Resume only with the original manifest and run directory.",
-    pattern: /resume|stored plan|immutable plan/i,
-  },
-  {
-    code: "CAPABILITY_INVALID",
-    exitCode: 2,
-    hint: "Inspect `fal-tools models <manifest> --json` and correct the provider/model/format.",
-    pattern: /capabilit|model .*does not support|provider .*not configured/i,
-  },
-  {
-    code: "INPUT_REJECTED",
-    exitCode: 2,
-    hint: "Use relative contained paths and remove secret-like or private content.",
-    pattern:
-      /absolute|machine path|parent|path escapes|secret|symlink|prompt file/i,
-  },
-  {
-    code: "PLAN_COLLISION",
-    exitCode: 2,
-    hint: "Give every candidate and normalized output a distinct ID and stem.",
-    pattern: /collision|duplicate variant/i,
-  },
-  {
-    code: "QA_REQUIRED",
-    exitCode: 5,
-    hint: "Run audit, inspect objective checks, and select only passing candidates.",
-    pattern: /passed QA|QA|audited/i,
-  },
-  {
-    code: "EXPORT_REJECTED",
-    exitCode: 6,
-    hint: "Check selected IDs, destination aliases, QA status, and destination contents.",
-    pattern: /selection|export|destination|selected candidate/i,
-  },
-  {
-    code: "RUN_FAILED",
-    exitCode: 4,
-    hint: "Inspect run.json failure codes, then resume with the same manifest and budgets.",
-    pattern: /failed candidates|provider|generation|cache integrity/i,
-  },
-];
-
 export function detectOutputMode(argumentsList: string[]): OutputMode {
   if (argumentsList.includes("--jsonl")) {
     return "jsonl";
@@ -104,7 +35,89 @@ export function detectOutputMode(argumentsList: string[]): OutputMode {
   return "human";
 }
 
-export function classifyFailure(error: Error): Failure {
+function validationFailure(command: CommandName): Failure {
+  if (command === "export") {
+    return {
+      code: "SELECTION_INVALID",
+      exitCode: 6,
+      hint: "Validate the strict v1 selection and retry export.",
+      message: "Selection validation failed.",
+    };
+  }
+  if (command === "audit") {
+    return {
+      code: "QA_PROFILE_INVALID",
+      exitCode: 5,
+      hint: "Validate the objective QA profile and retry audit.",
+      message: "QA profile validation failed.",
+    };
+  }
+  return {
+    code: "MANIFEST_INVALID",
+    exitCode: 2,
+    hint: "Validate the strict v1 manifest fields and retry `fal-tools plan`.",
+    message: "Manifest validation failed.",
+  };
+}
+
+function runFailure(message: string): Failure {
+  if (/pricing is UNKNOWN|unpriced/i.test(message)) {
+    return {
+      code: "PRICING_REQUIRED",
+      exitCode: 3,
+      hint: "Add sourced pricing or explicitly allow unpriced calls in the private manifest.",
+      message,
+    };
+  }
+  if (
+    /max-calls|max-cost|hard budget|budget exhausted|exceed.*budget/i.test(
+      message,
+    )
+  ) {
+    return {
+      code: "BUDGET_EXCEEDED",
+      exitCode: 3,
+      hint: "Raise the explicit hard ceiling or reduce the planned call graph.",
+      message,
+    };
+  }
+  if (/locked by another process/i.test(message)) {
+    return {
+      code: "RUN_LOCKED",
+      exitCode: 7,
+      hint: "Wait for the active process to finish before resuming this run directory.",
+      message,
+    };
+  }
+  if (/resume|stored plan|immutable plan/i.test(message)) {
+    return {
+      code: "RESUME_MISMATCH",
+      exitCode: 7,
+      hint: "Resume only with the original manifest and run directory.",
+      message,
+    };
+  }
+  if (
+    /capabilit|model .*does not support|provider .*not configured|absolute|machine path|secret|symlink|collision/i.test(
+      message,
+    )
+  ) {
+    return {
+      code: "RUN_INPUT_REJECTED",
+      exitCode: 2,
+      hint: "Dry-run with `fal-tools plan <manifest> --json` and fix the reported input.",
+      message,
+    };
+  }
+  return {
+    code: "RUN_FAILED",
+    exitCode: 4,
+    hint: "Inspect run.json failure codes, then resume with the same manifest and budgets.",
+    message,
+  };
+}
+
+export function classifyFailure(error: Error, command: CommandName): Failure {
   if (error instanceof CommanderError) {
     return {
       code: "CLI_USAGE",
@@ -113,23 +126,46 @@ export function classifyFailure(error: Error): Failure {
       message: redactText(error.message.replace(/^error:\s*/i, "")),
     };
   }
-  if (error.name === "ZodError" || error.name.includes("YAML")) {
-    return {
-      code: "MANIFEST_INVALID",
-      exitCode: 2,
-      hint: "Validate the strict v1 manifest fields and retry `fal-tools plan`.",
-      message: "Manifest or profile validation failed.",
-    };
+  if (
+    error.name === "ZodError" ||
+    error.name.includes("YAML") ||
+    error instanceof SyntaxError
+  ) {
+    return validationFailure(command);
   }
   const message = redactText(error.message);
-  const rule = failureRules.find((entry) => entry.pattern.test(message));
-  if (rule !== undefined) {
+  if (command === "export") {
     return {
-      code: rule.code,
-      exitCode: rule.exitCode,
-      hint: rule.hint,
+      code: "EXPORT_REJECTED",
+      exitCode: 6,
+      hint: "Check selected IDs, destination aliases, QA status, and destination contents.",
       message,
     };
+  }
+  if (command === "audit") {
+    return {
+      code: "AUDIT_FAILED",
+      exitCode: 5,
+      hint: "Check the completed run ledger, candidate integrity, and objective QA profile.",
+      message,
+    };
+  }
+  if (command === "plan" || command === "models") {
+    return {
+      code: /capabilit|model .*does not support|provider .*not configured/i.test(
+        message,
+      )
+        ? "CAPABILITY_INVALID"
+        : /collision|duplicate variant/i.test(message)
+          ? "PLAN_COLLISION"
+          : "INPUT_REJECTED",
+      exitCode: 2,
+      hint: "Check the private manifest, contained paths, capability registry, and output names.",
+      message,
+    };
+  }
+  if (command === "run") {
+    return runFailure(message);
   }
   return {
     code: "COMMAND_FAILED",
@@ -198,7 +234,8 @@ export function writeFailure(
     );
     return;
   }
-  process.stderr.write(
+  const stream = mode === "jsonl" ? process.stdout : process.stderr;
+  stream.write(
     `${JSON.stringify(envelope, null, mode === "json" ? 2 : undefined)}\n`,
   );
 }
