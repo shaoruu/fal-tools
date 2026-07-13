@@ -1,66 +1,160 @@
 # fal-tools
 
-`fal-tools` is a private-first, product-agnostic toolkit for manifest-driven
-fal.ai media generation. It plans an exact call graph before spending, executes
-within hard budgets, records prompt hashes instead of prompt text, performs
-objective media checks, and exports only explicit QA-passing selections.
+Give this repo to your agent, set `FAL_KEY`, and tell it what assets you need.
 
-This public repository is an initial v0. The interfaces are intentionally small
-and may evolve during v0 with versioned machine-output contracts.
+`fal-tools` gives coding and creative agents a safe loop for fal.ai: plan first,
+generate under a hard budget, run objective checks, select exact candidate IDs,
+then export only approved assets.
 
-## Requirements
+## Start here
 
-- Node.js 22 or newer
-- pnpm 11
-- `ffmpeg` and `ffprobe` on `PATH` for audio processing and auditing
-- `FAL_KEY` in the runtime environment only when executing fal.ai calls
-
-FFmpeg is never bundled. Image support installs `sharp` and its separately
-licensed native dependencies.
-
-## Commands
+Requires Node.js 22+ and pnpm 11. Provide `FAL_KEY` through your shell or agent
+secret store, never in a prompt or manifest.
 
 ```sh
+corepack enable
 pnpm install
 pnpm build
-
-pnpm fal-tools plan examples/image.yaml
-pnpm fal-tools plan examples/image.yaml --json
-pnpm fal-tools models examples/image.yaml --json
-pnpm fal-tools run path/to/private-manifest.yaml --out .fal-tools/run-001 --max-calls 4 --max-cost 1 --jsonl
-pnpm fal-tools audit .fal-tools/run-001/run.json --profile examples/qa-image.yaml --json
-pnpm fal-tools export examples/selection.yaml --from .fal-tools/run-001 --to path/to/destination --json
+test -n "$FAL_KEY"
 ```
 
-Run directories are candidate workspaces, not product export destinations. They
-contain `plan.json`, `run.json`, ignored candidates, and an ignored local cache.
-Export is a separate, explicit operation.
+Then give your agent this prompt:
 
-## Autonomous agents
+```text
+Use the fal-tools repo to generate a batch of four 1024×1024 editorial images
+for: "geometric paper sculptures on warm neutral backgrounds."
 
-The CLI never prompts or starts a persistent process. `plan`, `models`, `audit`,
-and `export` support a single `--json` result envelope. `run --jsonl` emits
-redacted log records followed by one stdout result record on success or failure;
-`run --json` suppresses progress and emits one document. Structured failures
-include stable codes, hints, and deterministic exit categories for usage/input,
-budget/pricing, run, QA, export, and resume/lock failures.
+Work only under .fal-tools/. Create a private v1 manifest using a current fal.ai
+image model, its supported output format, and reviewed pricing with source and
+retrieval timestamp.
 
-See the complete [autonomous agent workflow](docs/agents.md), including private
-manifest creation, capability discovery, dry-run, bounded execution, resume,
-audit, selection, and export.
+First run `pnpm fal-tools models <manifest> --json` and
+`pnpm fal-tools plan <manifest> --json`. Do not generate unless planning
+succeeds, pricing is known, the call count is at most 4, and estimated cost is
+at most $1.
 
-## Library
+Then run with `--max-calls 4 --max-cost 1 --jsonl`, audit the completed run,
+inspect the objective checks, and create a selection file containing only
+candidate IDs that passed. Export that explicit selection to
+.fal-tools/exported with `--json`.
+
+Never print or persist FAL_KEY, prompt text, signed URLs, provider responses, or
+headers. Do not copy candidates or generated outputs into the repo.
+```
+
+No command prompts, opens a UI, starts a daemon, or watches files.
+
+## The agent workflow
+
+Assume the agent created `.fal-tools/private/image-batch.yaml` with a current,
+reviewed fal model and pricing entry.
+
+1. Discover exactly what the private manifest allows:
+
+   ```sh
+   pnpm fal-tools models .fal-tools/private/image-batch.yaml --json
+   ```
+
+2. Dry-run the immutable call graph. This makes zero generation calls:
+
+   ```sh
+   pnpm fal-tools plan .fal-tools/private/image-batch.yaml --json
+   ```
+
+   The agent checks `result.callCount`, `result.estimatedCostUsd`, and
+   `result.isPricingUnknown` before continuing.
+
+3. Generate into an ignored candidate workspace with hard lifetime ceilings:
+
+   ```sh
+   pnpm fal-tools run .fal-tools/private/image-batch.yaml \
+     --out .fal-tools/run-001 \
+     --max-calls 4 \
+     --max-cost 1 \
+     --jsonl
+   ```
+
+   If interrupted, the agent can repeat the exact command with `--resume`.
+   Resume requires the original manifest, ledger, stored plan, and ceilings.
+
+4. Audit objective technical properties:
+
+   ```sh
+   pnpm fal-tools audit .fal-tools/run-001/run.json --json
+   ```
+
+   Image checks cover dimensions, alpha, bounding box, and duplicate hashes.
+   Audio checks cover decode, duration, peak, clipping, tail, seam, and
+   quarter-energy measurements. These checks do not claim semantic quality.
+
+5. After reviewing the audit result, the agent writes an explicit private
+   selection:
+
+   ```yaml
+   version: 1
+   candidates:
+     - id: editorial-paper.1
+       as: editorial-paper-primary.png
+     - id: editorial-paper.3
+       as: editorial-paper-alternate.png
+   ```
+
+6. Export only those passing candidate IDs:
+
+   ```sh
+   pnpm fal-tools export .fal-tools/private/selection.yaml \
+     --from .fal-tools/run-001 \
+     --to .fal-tools/exported \
+     --json
+   ```
+
+Run directories remain candidate workspaces; generation never exports directly
+to a product tree. Moving approved exports elsewhere is a separate downstream
+action.
+
+## Built for autonomous use
+
+- `--json` emits one versioned result document.
+- `run --jsonl` emits redacted events followed by one stdout result record on
+  success or failure.
+- Structured failures include stable codes, actionable hints, and deterministic
+  exit categories.
+- Calls and known cost are reserved before submission and persist across resume.
+- Pricing must include a source and retrieval timestamp. Unpriced execution
+  fails closed unless explicitly allowed.
+- Absolute paths, traversal, secret-like content, unsafe symlinks, corrupt
+  ledgers, and changed plans are rejected.
+- Prompts are persisted as SHA-256 digests, not text.
+- Generated binaries, private manifests, caches, candidates, and outputs are
+  ignored repository content.
+
+See the full [autonomous agent workflow](docs/agents.md).
+
+## Examples and deeper docs
+
+The committed [image](examples/image.yaml) and [audio](examples/audio.yaml)
+manifests use invented model names and prompts. They are safe schema examples,
+not executable model recommendations or a stale price table.
+
+- [Manifest and QA format](docs/manifests.md)
+- [Provider and pricing behavior](docs/providers.md)
+- [Architecture and candidate lifecycle](docs/architecture.md)
+- [Security model](docs/security.md)
+- [Publishing checklist](docs/publishing.md)
+- [Security reporting](SECURITY.md)
+
+Audio processing and audit require user-installed `ffmpeg` and `ffprobe` on
+`PATH`; fal-tools never bundles FFmpeg. Image support uses the separately
+licensed `sharp` and libvips dependencies described in [NOTICE](NOTICE).
+
+## Library API
 
 ```ts
 import { createPipeline } from "@fal-tools/core";
 import { createFalProvider } from "@fal-tools/provider-fal";
 
 const fal = createFalProvider({ capabilities });
-const pipeline = createPipeline({
-  providers: { fal },
-  logger,
-  clock,
-});
+const pipeline = createPipeline({ providers: { fal }, logger, clock });
 
 const plan = await pipeline.plan({ manifestPath });
 const ledger = await pipeline.run({
@@ -71,28 +165,8 @@ const ledger = await pipeline.run({
 });
 ```
 
-Callers can supply the image/audio processors and auditors from
-`@fal-tools/image` and `@fal-tools/audio`. The CLI wires them by default.
-
-## Safety defaults
-
-- Absolute paths, parent traversal, sensitive field names, and secret-like
-  values are rejected.
-- Pricing must come from a configured capability registry with a source and
-  retrieval timestamp. Missing pricing is displayed as `UNKNOWN`; execution
-  fails unless the manifest or library caller explicitly allows unpriced calls.
-- Prompt content exists only in memory during planning/execution. Plans and
-  ledgers retain SHA-256 digests.
-- Provider responses, headers, signed URLs, and prompt text are excluded from
-  logs and provenance.
-- Only transient provider failures are retried, at most three attempts. Every
-  attempt is recorded before submission and consumes the run's lifetime hard
-  call and known-cost ceilings, including across resume.
-- No generated binary belongs in the repository or npm package.
-
-See [architecture](docs/architecture.md), [manifest format](docs/manifests.md),
-[provider integration](docs/providers.md), [security model](docs/security.md),
-and [publishing](docs/publishing.md).
+Add image/audio processors and auditors from `@fal-tools/image` and
+`@fal-tools/audio`; the CLI wires them by default.
 
 ## Development
 
@@ -104,9 +178,5 @@ pnpm build
 pnpm test:smoke
 pnpm pack:inspect
 ```
-
-Install the repository hook with `git config core.hooksPath .githooks` when no
-existing hook manager is in use. If one is already configured, invoke
-`.githooks/pre-commit` from that manager.
 
 Licensed under Apache-2.0.
