@@ -279,6 +279,10 @@ describe("planning and safety", () => {
     const machinePath = ["", "opt", "private-space", "asset.txt"].join("/");
     logger.error(`failed to read ${machinePath}`);
     expect(JSON.stringify(records)).not.toContain(machinePath);
+
+    const spacedPath = ["", "opt", "客户 space", "asset.txt"].join("/");
+    logger.error(`failed to read '${spacedPath}'`);
+    expect(JSON.stringify(records)).not.toContain(spacedPath);
   });
 });
 
@@ -406,6 +410,34 @@ describe("budgeted execution and recovery", () => {
       }),
     ).rejects.toThrow("resume requires");
     expect(provider.calls).toBe(0);
+  });
+
+  it("verifies stored plan contents before resume", async () => {
+    const directory = await temporaryDirectory();
+    const provider = new FakeProvider();
+    const manifestPath = await writeManifest(directory, [job()]);
+    const outDir = path.join(directory, "tampered-run");
+    const pipeline = createPipeline({
+      clock: immediateClock,
+      providers: { fal: provider },
+    });
+    const plan = await pipeline.plan({ manifestPath });
+    await pipeline.run({ manifestPath, maxCalls: 1, outDir });
+    await writeFile(
+      path.join(outDir, "plan.json"),
+      JSON.stringify({ planHash: plan.planHash }),
+      { mode: 0o600 },
+    );
+
+    await expect(
+      pipeline.run({
+        isResume: true,
+        manifestPath,
+        maxCalls: 1,
+        outDir,
+      }),
+    ).rejects.toThrow("stored plan validation");
+    expect(provider.calls).toBe(1);
   });
 
   it("rejects corrupted cache blobs", async () => {
@@ -560,6 +592,7 @@ describe("objective QA and explicit export", () => {
     const files = await readFile(path.join(directory, "export", "chosen.png"));
     expect(files).toEqual(imageBytes);
     const persisted = await loadRunLedger(path.join(outDir, "run.json"));
+    expect(persisted.version).toBe(2);
     expect(persisted.candidates).toHaveLength(2);
   });
 

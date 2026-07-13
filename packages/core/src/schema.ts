@@ -206,6 +206,6 @@ export const runLedgerSchema = z
         costUsd: z.number().nonnegative(),
       })
       .strict(),
-    version: z.literal(1),
+    version: z.literal(2),
   })
   .strict();

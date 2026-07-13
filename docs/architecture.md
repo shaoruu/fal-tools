@@ -36,7 +36,9 @@ native media dependencies into consumers that do not need them.
    candidate ID, safe relative destination, and no-overwrite behavior.
 
 Plans and ledgers intentionally omit prompt text, provider response bodies,
-headers, download URLs, credentials, and absolute paths.
+headers, download URLs, credentials, and absolute paths. The initial public run
+ledger schema is version 2; incompatible pre-public ledgers are rejected rather
+than guessed or migrated during execution.
 
 ## Candidate lifecycle
 

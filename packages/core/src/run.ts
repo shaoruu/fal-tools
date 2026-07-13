@@ -16,6 +16,7 @@ import pLimit from "p-limit";
 
 import {
   assertNoSymlinkComponents,
+  canonicalJson,
   loadRunLedger,
   resolveContained,
   resolveContainedExisting,
@@ -381,11 +382,31 @@ async function assertStoredPlan(
   planPath: string,
   expectedPlanHash: string,
 ): Promise<void> {
-  const stored = JSON.parse(await readFile(planPath, "utf8")) as {
-    planHash?: string;
-  };
-  if (stored.planHash !== expectedPlanHash) {
-    throw new Error("stored plan does not match the immutable plan");
+  try {
+    const stored = JSON.parse(await readFile(planPath, "utf8")) as JsonObject;
+    if (
+      stored.version !== 1 ||
+      typeof stored.manifestHash !== "string" ||
+      typeof stored.planHash !== "string" ||
+      !Array.isArray(stored.calls)
+    ) {
+      throw new Error("stored plan structure is invalid");
+    }
+    const computedPlanHash = sha256(
+      canonicalJson({
+        calls: stored.calls,
+        manifestHash: stored.manifestHash,
+        version: 1,
+      }),
+    );
+    if (
+      stored.planHash !== computedPlanHash ||
+      computedPlanHash !== expectedPlanHash
+    ) {
+      throw new Error("stored plan hash does not match its contents");
+    }
+  } catch (error) {
+    throw new Error("stored plan validation failed", { cause: error });
   }
 }
 
@@ -419,7 +440,11 @@ async function runLocked(
 
   let ledger: RunLedger;
   if (options.isResume === true && isLedgerPresent) {
-    ledger = await loadRunLedger(ledgerPath);
+    try {
+      ledger = await loadRunLedger(ledgerPath);
+    } catch (error) {
+      throw new Error("resume ledger validation failed", { cause: error });
+    }
     if (
       ledger.planHash !== plan.planHash ||
       ledger.manifestHash !== plan.manifestHash
@@ -459,7 +484,7 @@ async function runLocked(
         calls: 0,
         costUsd: 0,
       },
-      version: 1,
+      version: 2,
     };
   }
   await writeJsonAtomic(ledgerPath, ledger);

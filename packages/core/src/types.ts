@@ -199,7 +199,7 @@ export type RunLedger = {
     calls: number;
     costUsd: number;
   };
-  version: 1;
+  version: 2;
 };
 
 export type RunOptions = {
