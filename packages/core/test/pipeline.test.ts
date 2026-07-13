@@ -22,7 +22,7 @@ import {
 const temporaryDirectories: string[] = [];
 const immediateClock: Clock = {
   now: () => new Date("2026-01-01T00:00:00.000Z"),
-  sleep: async () => undefined,
+  sleep: () => Promise.resolve(),
 };
 const zeroPrice = {
   amountUsd: 0,
@@ -56,17 +56,20 @@ class FakeProvider implements GenerationProvider {
     };
   }
 
-  async generate(request: ProviderRequest): Promise<ProviderResult> {
+  generate(request: ProviderRequest): Promise<ProviderResult> {
     void request;
     this.calls += 1;
     if (this.#isPermanentFailure) {
-      throw new Error("permanent");
+      return Promise.reject(new Error("permanent"));
     }
     if (this.#transientFailures > 0) {
       this.#transientFailures -= 1;
-      throw new Error("transient");
+      return Promise.reject(new Error("transient"));
     }
-    return { bytes: this.#bytes, requestId: `request-${this.calls}` };
+    return Promise.resolve({
+      bytes: this.#bytes,
+      requestId: `request-${this.calls}`,
+    });
   }
 
   getCapability(): ModelCapability {

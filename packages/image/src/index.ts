@@ -49,16 +49,11 @@ export const imageAuditor: AssetAuditor = {
     const bytes = await readFile(context.filePath);
     const image = sharp(bytes, { failOn: "error" });
     const metadata = await image.metadata();
-    if (metadata.width === undefined || metadata.height === undefined) {
-      throw new Error(
-        `image dimensions unavailable: ${context.candidate.candidateId}`,
-      );
-    }
     const decoded = await image
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true });
-    const isAlphaPresent = metadata.hasAlpha === true;
+    const isAlphaPresent = metadata.hasAlpha;
     const isDuplicate = context.duplicateCandidateIds.length > 0;
     const profile = context.profile.image ?? {};
     const isPassed =

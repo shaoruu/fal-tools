@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import process from "node:process";
 
 const temporaryDirectory = await mkdtemp(
   path.join(os.tmpdir(), "fal-tools-smoke-"),

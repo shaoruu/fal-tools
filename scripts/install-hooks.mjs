@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import process from "node:process";
 
 function gitConfig(...argumentsList) {
   return execFileSync("git", ["config", ...argumentsList], {

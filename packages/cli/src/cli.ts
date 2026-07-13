@@ -198,8 +198,10 @@ program
     },
   );
 
-program.parseAsync().catch((error) => {
+try {
+  await program.parseAsync();
+} catch (error) {
   const message = error instanceof Error ? error.message : "command failed";
   process.stderr.write(`fal-tools: ${redactText(message)}\n`);
   process.exitCode = 1;
-});
+}

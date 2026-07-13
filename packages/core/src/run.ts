@@ -231,17 +231,17 @@ async function executeCall(
           });
         })();
   await mkdir(path.dirname(cachePath), { recursive: true });
-  await writeFile(cachePath, bytes, { flag: "wx", mode: 0o600 }).catch(
-    async (error) => {
-      if (
-        !(error instanceof Error) ||
-        !("code" in error) ||
-        error.code !== "EEXIST"
-      ) {
-        throw error;
-      }
-    },
-  );
+  try {
+    await writeFile(cachePath, bytes, { flag: "wx", mode: 0o600 });
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      !("code" in error) ||
+      error.code !== "EEXIST"
+    ) {
+      throw error;
+    }
+  }
   return materializeCandidate(
     call,
     cachePath,

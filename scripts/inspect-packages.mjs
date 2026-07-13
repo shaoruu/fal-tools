@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
+import process from "node:process";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const artifactDirectory = path.join(repositoryRoot, "artifacts", "packs");

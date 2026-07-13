@@ -98,9 +98,9 @@ export function resolveContained(
   return resolved;
 }
 
-export async function writeJsonAtomic<Value>(
+export async function writeJsonAtomic(
   filePath: string,
-  value: Value,
+  value: object,
 ): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
   const temporaryPath = `${filePath}.tmp`;

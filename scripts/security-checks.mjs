@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import process from "node:process";
 
 const isStaged = process.argv.includes("--staged");
 const command = isStaged

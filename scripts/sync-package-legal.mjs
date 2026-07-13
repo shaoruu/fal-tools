@@ -1,5 +1,6 @@
 import { copyFile, mkdir } from "node:fs/promises";
 import path from "node:path";
+import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const packageDirectory = path.dirname(fileURLToPath(import.meta.url));
