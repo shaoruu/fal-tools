@@ -14,7 +14,7 @@ pnpm build
 pnpm test:smoke
 pnpm pack:inspect
 pnpm notices
-pnpm sbom
+pnpm sbom:generate
 ```
 
 Review every tarball listing and the generated SPDX-style notice report. The

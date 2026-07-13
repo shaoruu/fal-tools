@@ -20,7 +20,7 @@
     "security:repo": "node scripts/repository-guard.mjs",
     "security:staged": "node scripts/staged-guard.mjs",
     "notices": "node scripts/generate-notices.mjs",
-    "sbom": "node scripts/generate-sbom.mjs",
+    "sbom:generate": "node scripts/generate-sbom.mjs",
     "prepare": "simple-git-hooks"
   },
   "devDependencies": {

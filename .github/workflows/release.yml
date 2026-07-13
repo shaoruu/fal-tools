@@ -32,7 +32,7 @@ jobs:
       - run: pnpm test:smoke
       - run: pnpm pack:inspect
       - run: pnpm notices
-      - run: pnpm sbom
+      - run: pnpm sbom:generate
       - uses: actions/upload-artifact@v4
         with:
           name: supply-chain-artifacts
