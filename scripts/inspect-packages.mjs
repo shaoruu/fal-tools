@@ -92,20 +92,21 @@ const consumerDirectory = await mkdtemp(
   path.join(os.tmpdir(), "fal-tools-pack-consumer-"),
 );
 try {
+  const localPackages = Object.fromEntries(
+    archives.map(({ archivePath, name }) => [name, `file:${archivePath}`]),
+  );
   await writeFile(
     path.join(consumerDirectory, "package.json"),
     JSON.stringify({
-      dependencies: Object.fromEntries(
-        archives.map(({ archivePath, name }) => [name, `file:${archivePath}`]),
-      ),
+      dependencies: localPackages,
       private: true,
       type: "module",
     }),
     { mode: 0o600 },
   );
-  execFileSync("pnpm", ["install"], {
+  execFileSync("npm", ["install", "--no-audit", "--no-fund"], {
     cwd: consumerDirectory,
-    stdio: "pipe",
+    stdio: "inherit",
   });
   execFileSync(
     process.execPath,
